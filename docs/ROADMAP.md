@@ -28,6 +28,15 @@ Create a simple, reliable timeline planning experience that helps users organize
 - Recurring items
 - Tagging and filtering
 
+### Done
+- Repository scaffolding and project setup
+- Initial roadmap and documentation structure
+- Core planner UI shell
+- Theme selection and view toggles
+- Event modal creation/editing flow
+- Save, export, and import functionality
+- Basic dirty-state tracking for unsaved work
+
 ## Mid-Term (3-6 months)
 ### Planned
 - Event reminders
@@ -35,6 +44,10 @@ Create a simple, reliable timeline planning experience that helps users organize
 - Reusable templates
 - Calendar integration
 - Multi-project planning
+
+### In Progress
+- Refined scheduling behavior and UX polish
+- Data recovery and persistence improvements
 
 ## Long-Term (6+ months)
 ### Planned
