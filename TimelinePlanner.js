@@ -13,7 +13,7 @@
   const { fromJS } = immutable;
   const STORAGE_KEY = 'timeline-planner-state-v1';
   const THEME_KEY = 'timeline-planner-theme';
-  let lastStatusText = 'Ready';
+  let lastStatusText = 'Saved';
 
   function defaultState() {
     const today = new Date();
@@ -25,6 +25,7 @@
       view: 'month',
       modalMode: 'create',
       dragState: null,
+      isDirty: false,
       plan: {
         id: 'plan-main',
         name: 'Main planner',
@@ -115,6 +116,16 @@
     }
   }
 
+  function markDirty() {
+    state = state.set('isDirty', true);
+    setStatus('Unsaved changes', true);
+  }
+
+  function clearDirty() {
+    state = state.set('isDirty', false);
+    setStatus('Saved', false);
+  }
+
   let state = loadState();
 
   function render() {
@@ -123,6 +134,7 @@
     const items = state.getIn(['plan', 'items']);
     const selectedEventId = state.get('selectedEventId');
     const focusPercent = getFocusPercent(selectedDate);
+    const isDirty = !!state.get('isDirty');
 
     root.innerHTML = `
       <div class="timeline-app">
@@ -146,7 +158,7 @@
                 <option value="sky">Sky Theme</option>
               </select>
             </div>
-            <div id="save-status" class="save-status">${lastStatusText}</div>
+            <div id="save-status" class="save-status ${isDirty ? 'warn' : ''}">${isDirty ? 'Unsaved changes' : lastStatusText}</div>
             <button class="save-btn" id="save-plan-btn">Save</button>
             <button class="export-btn" id="export-json-btn">Export</button>
             <button class="import-btn" id="import-json-btn">Import</button>
@@ -174,7 +186,7 @@
 
         <div class="detail-panel">
           <div class="detail-card">
-            ${renderDetail(selectedDate, items, selectedEventId)}
+            ${renderDetail(selectedDate, items, selectedEventId, isDirty)}
           </div>
         </div>
       </div>
@@ -182,13 +194,15 @@
 
     applyTheme(loadTheme());
     bindHandlers();
+
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
       themeSelect.value = loadTheme();
     }
     const saveStatus = document.getElementById('save-status');
     if (saveStatus) {
-      saveStatus.textContent = lastStatusText;
+      saveStatus.textContent = isDirty ? 'Unsaved changes' : lastStatusText;
+      saveStatus.classList.toggle('warn', isDirty);
     }
   }
 
@@ -225,8 +239,9 @@
     const saveBtn = document.getElementById('save-plan-btn');
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
-        saveState(state);
-        setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+        saveState(state.set('isDirty', false));
+        clearDirty();
+        render();
       });
     }
 
@@ -266,7 +281,7 @@
           try {
             const parsed = JSON.parse(String(reader.result));
             const importedState = parsed.state ? fromJS(parsed.state) : defaultState();
-            state = importedState;
+            state = importedState.set('isDirty', false);
             if (parsed.theme) {
               applyTheme(parsed.theme);
             }
@@ -320,6 +335,8 @@
       const eventCard = event.target.closest('.event-card');
       if (!eventCard) return;
 
+      event.preventDefault();
+
       const eventId = eventCard.dataset.eventId;
       const item = findEventById(state.getIn(['plan', 'items']), eventId);
       if (!item) return;
@@ -330,6 +347,11 @@
         originalStartDate: item.get('startDate'),
         originalEndDate: item.get('endDate')
       }));
+
+      const activeCard = document.querySelector(`.event-card[data-event-id="${eventId}"]`);
+      if (activeCard) {
+        activeCard.classList.add('dragging');
+      }
 
       eventCard.setPointerCapture && eventCard.setPointerCapture(event.pointerId);
     });
@@ -356,6 +378,10 @@
       const nextStart = offsetDate(dragState.get('originalStartDate'), deltaDays);
       const nextEnd = offsetDate(nextStart, duration - 1);
 
+      const currentStart = item.get('startDate');
+      const currentEnd = item.get('endDate');
+      if (currentStart === nextStart && currentEnd === nextEnd) return;
+
       state = state.updateIn(['plan', 'items'], (items) =>
         items.map((entry) => {
           if (entry.get('id') !== dragState.get('eventId')) return entry;
@@ -364,10 +390,12 @@
       );
 
       state = state.set('selectedDate', nextStart);
+      markDirty();
       render();
     });
 
     document.addEventListener('pointerup', () => {
+      document.querySelectorAll('.event-card.dragging').forEach((node) => node.classList.remove('dragging'));
       state = state.set('dragState', null);
     });
 
@@ -415,7 +443,7 @@
 
         state = state.set('selectedEventId', id);
         state = state.set('selectedDate', startDate);
-        setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+        markDirty();
         closeModal();
         render();
       });
@@ -432,7 +460,7 @@
         );
 
         state = state.set('selectedEventId', null);
-        setStatus('Event deleted');
+        markDirty();
         closeModal();
         render();
       });
@@ -600,7 +628,7 @@
     `;
   }
 
-  function renderDetail(selectedDate, items, selectedEventId) {
+  function renderDetail(selectedDate, items, selectedEventId, isDirty) {
     const match = findEventById(items, selectedEventId)
       || items.find((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'));
 
@@ -608,8 +636,10 @@
       return '<div class="empty-state">No event selected.</div>';
     }
 
+    const eventTitle = `${escapeHtml(match.get('title'))}${isDirty ? ' *' : ''}`;
+
     return `
-      <div class="detail-title">${escapeHtml(match.get('title'))}</div>
+      <div class="detail-title">${eventTitle}</div>
 
       <div class="detail-field">
         <span class="detail-label">Type</span>

@@ -226,6 +226,8 @@ button {
 
 .save-status.warn {
   color: var(--danger);
+  border-color: #fecaca;
+  background: #fff1f2;
 }
 
 .planner-shell {
@@ -442,6 +444,11 @@ button {
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
   cursor: pointer;
   user-select: none;
+}
+
+.event-card.dragging {
+  opacity: 0.8;
+  transform: scale(0.98);
 }
 
 .event-card.work { background: var(--work); }
