@@ -1,11 +1,11 @@
 :root {
-  --bg: #f3f6fb;
+  --bg: #f4f7fb;
   --panel: #ffffff;
-  --panel-soft: #f6f8fd;
-  --line: #dbe3ef;
-  --line-strong: #c7d0e1;
+  --panel-soft: #f7f9fd;
+  --line: #dfe5f1;
+  --line-strong: #c7d2e3;
   --text: #1d2433;
-  --muted: #5e6a7e;
+  --muted: #5f6f86;
   --shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
   --focus: #111827;
   --work: #3b82f6;
@@ -19,8 +19,7 @@
   box-sizing: border-box;
 }
 
-html,
-body {
+html, body {
   margin: 0;
   min-height: 100%;
   background: var(--bg);
@@ -51,13 +50,13 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 0 20px;
   height: 72px;
-  padding: 0 22px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  z-index: 30;
+  z-index: 60;
 }
 
 .topbar-left,
@@ -75,27 +74,28 @@ button {
 
 .view-toggle {
   display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px;
-  border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel-soft);
+  border: 1px solid var(--line);
 }
 
 .view-button {
-  background: transparent;
   border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
   border-radius: 8px;
   padding: 8px 12px;
   font-weight: 700;
-  color: var(--muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
 }
 
 .view-button.active {
   background: var(--panel);
   color: var(--text);
-  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.07);
+  box-shadow: 0 2px 8px rgba(17, 24, 39, 0.08);
 }
 
 .primary-btn,
@@ -109,13 +109,13 @@ button {
 
 .primary-btn {
   background: var(--focus);
-  color: #fff;
+  color: white;
 }
 
 .secondary-btn {
   background: var(--panel-soft);
-  color: var(--text);
   border: 1px solid var(--line);
+  color: var(--text);
 }
 
 .planner-shell {
@@ -133,22 +133,22 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  background: linear-gradient(to bottom, #ffffff, #fafcff);
   border-bottom: 1px solid var(--line);
+  background: linear-gradient(to bottom, #ffffff, #fafcff);
 }
 
 .period-label {
   font-weight: 700;
   font-size: 1.08rem;
+  color: var(--text);
 }
 
 .focus-rail {
   position: relative;
-  height: 62px;
-  background: linear-gradient(to bottom, #f7faff, #f2f5fb);
+  height: 72px;
+  background: linear-gradient(to bottom, #f7f9fe, #f2f5fb);
   border-bottom: 1px solid var(--line);
   overflow: hidden;
-  z-index: 10;
 }
 
 .focus-track {
@@ -156,7 +156,7 @@ button {
   left: 0;
   right: 0;
   top: 50%;
-  height: 1px;
+  height: 2px;
   background: var(--line-strong);
   transform: translateY(-50%);
 }
@@ -168,8 +168,7 @@ button {
   width: 2px;
   background: var(--focus);
   transform: translateX(-50%);
-  box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.08);
-  z-index: 4;
+  z-index: 5;
 }
 
 .focus-handle {
@@ -181,24 +180,31 @@ button {
   margin-top: -10px;
   border-radius: 50%;
   background: var(--focus);
-  border: 3px solid #ffffff;
-  box-shadow: 0 5px 16px rgba(17, 24, 39, 0.2);
+  border: 3px solid white;
+  box-shadow: 0 6px 16px rgba(17, 24, 39, 0.2);
   cursor: grab;
-  z-index: 5;
+  z-index: 6;
 }
 
 .focus-handle:active {
   cursor: grabbing;
 }
 
-.month-grid {
+.month-grid,
+.week-grid {
   display: grid;
-  grid-template-columns: repeat(7, minmax(110px, 1fr));
+  grid-template-columns: repeat(7, minmax(120px, 1fr));
+  width: 100%;
+}
+
+.day-grid {
+  display: grid;
+  grid-template-columns: 1fr;
   width: 100%;
 }
 
 .day-column {
-  min-height: 180px;
+  min-height: 170px;
   border-right: 1px solid var(--line);
   background: linear-gradient(to bottom, #ffffff, #fbfcff);
 }
@@ -223,8 +229,8 @@ button {
 
 .day-body {
   position: relative;
-  min-height: 180px;
-  padding: 10px 8px 10px;
+  min-height: 170px;
+  padding: 10px 8px;
 }
 
 .day-number {
@@ -236,12 +242,12 @@ button {
   border-radius: 50%;
   font-size: 0.8rem;
   font-weight: 700;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .day-number.today {
   background: var(--focus);
-  color: #fff;
+  color: white;
 }
 
 .day-number.selected {
@@ -250,7 +256,7 @@ button {
 }
 
 .day-number.outside-month {
-  color: #9aa9be;
+  color: #9aa7bc;
 }
 
 .event-card {
@@ -260,16 +266,17 @@ button {
   justify-content: space-between;
   gap: 8px;
   width: calc(100% - 10px);
-  min-height: 26px;
+  min-height: 28px;
   padding: 6px 8px;
   margin: 6px 0;
   border-radius: 8px;
   border: 1px solid rgba(17, 24, 39, 0.06);
-  color: #fff;
-  font-size: 0.72rem;
+  color: white;
+  font-size: 0.7rem;
   font-weight: 700;
   box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
   cursor: pointer;
+  user-select: none;
 }
 
 .event-card.work { background: var(--work); }
@@ -282,34 +289,14 @@ button {
   box-shadow: 0 0 0 2px rgba(17, 24, 39, 0.18);
 }
 
-.event-card .event-label {
+.event-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.event-card .event-dot {
-  opacity: 0.9;
-}
-
-.event-marker {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 12px;
-  width: 4px;
-  border-radius: 999px;
-  z-index: 2;
-}
-
-.event-marker.work { background: var(--work); }
-.event-marker.personal { background: var(--personal); }
-.event-marker.health { background: var(--health); }
-.event-marker.travel { background: var(--travel); }
-.event-marker.deadline { background: var(--deadline); }
-
 .detail-panel {
-  padding: 18px 16px;
+  padding: 0 18px 18px;
 }
 
 .detail-card {
@@ -317,7 +304,7 @@ button {
   border: 1px solid var(--line);
   border-radius: 12px;
   box-shadow: var(--shadow);
-  padding: 14px;
+  padding: 16px;
 }
 
 .detail-title {
@@ -336,8 +323,8 @@ button {
   color: var(--muted);
   font-size: 0.72rem;
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .detail-value {
@@ -365,12 +352,104 @@ button {
   font-weight: 600;
 }
 
+.event-modal {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.event-modal.hidden {
+  display: none;
+}
+
+.event-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+}
+
+.event-modal-dialog {
+  position: relative;
+  width: min(520px, calc(100% - 24px));
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  z-index: 2;
+}
+
+.event-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+#event-modal-title {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.close-btn {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+#event-form {
+  padding: 18px;
+}
+
+.form-row {
+  margin-bottom: 14px;
+}
+
+.form-row label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--muted);
+  letter-spacing: 0.03em;
+}
+
+.form-row input,
+.form-row select,
+.form-row textarea {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  background: white;
+}
+
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
 @media (max-width: 1100px) {
   .planner-shell {
-    width: calc(100% - 20px);
+    width: calc(100% - 18px);
   }
 
-  .month-grid {
-    grid-template-columns: repeat(7, minmax(90px, 1fr));
+  .month-grid,
+  .week-grid {
+    grid-template-columns: repeat(7, minmax(88px, 1fr));
   }
 }

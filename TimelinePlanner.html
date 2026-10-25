@@ -9,6 +9,56 @@
   </head>
   <body>
     <div id="app"></div>
+
+    <div id="event-modal" class="event-modal hidden" aria-hidden="true">
+      <div class="event-modal-backdrop" data-close="modal"></div>
+      <div class="event-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="event-modal-title">
+        <div class="event-modal-header">
+          <h3 id="event-modal-title">Create Event</h3>
+          <button type="button" class="close-btn" data-close="modal" aria-label="Close">×</button>
+        </div>
+
+        <form id="event-form">
+          <div class="form-row">
+            <label for="event-title">Title</label>
+            <input id="event-title" name="title" type="text" required />
+          </div>
+
+          <div class="form-row">
+            <label for="event-type">Type</label>
+            <select id="event-type" name="type">
+              <option value="work">Work</option>
+              <option value="personal">Personal</option>
+              <option value="health">Health</option>
+              <option value="travel">Travel</option>
+              <option value="deadline">Deadline</option>
+            </select>
+          </div>
+
+          <div class="form-row two-col">
+            <div>
+              <label for="event-start">Start date</label>
+              <input id="event-start" name="startDate" type="date" required />
+            </div>
+            <div>
+              <label for="event-end">End date</label>
+              <input id="event-end" name="endDate" type="date" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="event-notes">Notes</label>
+            <textarea id="event-notes" name="notes" rows="4"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="secondary-btn" data-close="modal">Cancel</button>
+            <button type="submit" class="primary-btn">Save Event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <script src="TimelinePlanner.js"></script>
   </body>
 </html>
