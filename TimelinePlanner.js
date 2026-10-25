@@ -11,60 +11,93 @@
   }
 
   const { fromJS } = immutable;
+  const STORAGE_KEY = 'timeline-planner-state-v1';
+  const THEME_KEY = 'timeline-planner-theme';
 
-  const today = new Date();
-  const initialDate = toISODate(today);
+  function defaultState() {
+    const today = new Date();
+    const initialDate = toISODate(today);
 
-  const initialState = fromJS({
-    selectedDate: initialDate,
-    selectedEventId: 'evt-2',
-    view: 'month',
-    dragState: null,
-    plan: {
-      id: 'plan-main',
-      name: 'Main planner',
-      items: [
-        {
-          id: 'evt-1',
-          title: 'Design Review',
-          type: 'work',
-          startDate: offsetDate(initialDate, -2),
-          endDate: offsetDate(initialDate, 2),
-          notes: 'Review timeline structure and UX flow.',
-          status: 'planned'
-        },
-        {
-          id: 'evt-2',
-          title: 'Workout',
-          type: 'health',
-          startDate: initialDate,
-          endDate: initialDate,
-          notes: 'Strength session and mobility work.',
-          status: 'active'
-        },
-        {
-          id: 'evt-3',
-          title: 'Trip Planning',
-          type: 'travel',
-          startDate: offsetDate(initialDate, 5),
-          endDate: offsetDate(initialDate, 8),
-          notes: 'Finalize flights and lodging.',
-          status: 'planned'
-        },
-        {
-          id: 'evt-4',
-          title: 'Project Deadline',
-          type: 'deadline',
-          startDate: offsetDate(initialDate, 12),
-          endDate: offsetDate(initialDate, 15),
-          notes: 'Final handoff package due.',
-          status: 'urgent'
-        }
-      ]
+    return fromJS({
+      selectedDate: initialDate,
+      selectedEventId: 'evt-2',
+      view: 'month',
+      modalMode: 'create',
+      dragState: null,
+      plan: {
+        id: 'plan-main',
+        name: 'Main planner',
+        items: [
+          {
+            id: 'evt-1',
+            title: 'Design Review',
+            type: 'work',
+            startDate: offsetDate(initialDate, -2),
+            endDate: offsetDate(initialDate, 2),
+            notes: 'Review timeline structure and UX flow.',
+            status: 'planned'
+          },
+          {
+            id: 'evt-2',
+            title: 'Workout',
+            type: 'health',
+            startDate: initialDate,
+            endDate: initialDate,
+            notes: 'Strength session and mobility work.',
+            status: 'active'
+          },
+          {
+            id: 'evt-3',
+            title: 'Trip Planning',
+            type: 'travel',
+            startDate: offsetDate(initialDate, 5),
+            endDate: offsetDate(initialDate, 8),
+            notes: 'Finalize flights and lodging.',
+            status: 'planned'
+          },
+          {
+            id: 'evt-4',
+            title: 'Project Deadline',
+            type: 'deadline',
+            startDate: offsetDate(initialDate, 12),
+            endDate: offsetDate(initialDate, 15),
+            notes: 'Final handoff package due.',
+            status: 'urgent'
+          }
+        ]
+      }
+    });
+  }
+
+  function loadState() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return defaultState();
+      return fromJS(JSON.parse(raw));
+    } catch (error) {
+      console.warn('Could not load timeline state:', error);
+      return defaultState();
     }
-  });
+  }
 
-  let state = initialState;
+  function loadTheme() {
+    try {
+      const savedTheme = localStorage.getItem(THEME_KEY) || 'standard';
+      return savedTheme;
+    } catch (error) {
+      return 'standard';
+    }
+  }
+
+  function saveState(nextState) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState.toJS()));
+    } catch (error) {
+      console.warn('Could not save timeline state:', error);
+    }
+  }
+
+  let state = loadState();
 
   function render() {
     const selectedDate = state.get('selectedDate');
@@ -86,6 +119,15 @@
           </div>
 
           <div class="topbar-right">
+            <div class="theme-selector">
+              <label for="theme-select">Theme</label>
+              <select id="theme-select">
+                <option value="standard">Standard</option>
+                <option value="dark">Dark Theme</option>
+                <option value="forest">Forest Theme</option>
+                <option value="sky">Sky Theme</option>
+              </select>
+            </div>
             <button class="secondary-btn" id="today-btn">Today</button>
             <button class="primary-btn" id="new-item-btn">+ New Event</button>
           </div>
@@ -116,10 +158,21 @@
       </div>
     `;
 
-    bindStaticHandlers();
+    applyStoredTheme();
+    bindHandlers();
+    saveState(state);
   }
 
-  function bindStaticHandlers() {
+  function applyStoredTheme() {
+    const theme = loadTheme();
+    document.body.setAttribute('data-theme', theme);
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+      themeSelect.value = theme;
+    }
+  }
+
+  function bindHandlers() {
     document.querySelectorAll('.view-button').forEach((button) => {
       button.addEventListener('click', () => {
         state = state.set('view', button.dataset.view);
@@ -127,22 +180,34 @@
       });
     });
 
-    document.getElementById('today-btn').addEventListener('click', () => {
-      state = state.set('selectedDate', toISODate(new Date()));
-      render();
-    });
+    const todayBtn = document.getElementById('today-btn');
+    if (todayBtn) {
+      todayBtn.addEventListener('click', () => {
+        state = state.set('selectedDate', toISODate(new Date()));
+        render();
+      });
+    }
 
-    const newItemButton = document.getElementById('new-item-btn');
-    if (newItemButton) {
-      newItemButton.addEventListener('click', () => {
-        openEventModal(state.get('selectedDate'));
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+      themeSelect.addEventListener('change', (event) => {
+        const selectedTheme = event.target.value;
+        document.body.setAttribute('data-theme', selectedTheme);
+        localStorage.setItem(THEME_KEY, selectedTheme);
+      });
+    }
+
+    const newItemBtn = document.getElementById('new-item-btn');
+    if (newItemBtn) {
+      newItemBtn.addEventListener('click', () => {
+        openModal('create', state.get('selectedDate'));
       });
     }
 
     document.addEventListener('click', (event) => {
       const modalClose = event.target.closest('[data-close="modal"]');
       if (modalClose) {
-        closeEventModal();
+        closeModal();
         return;
       }
 
@@ -150,12 +215,27 @@
       if (eventCard) {
         const eventId = eventCard.dataset.eventId;
         state = state.set('selectedEventId', eventId);
-        const matched = state.getIn(['plan', 'items']).find((item) => item.get('id') === eventId);
-        if (matched) {
-          state = state.set('selectedDate', matched.get('startDate'));
+        const item = findEventById(state.getIn(['plan', 'items']), eventId);
+        if (item) {
+          state = state.set('selectedDate', item.get('startDate'));
         }
         render();
+        return;
       }
+
+      const editButton = event.target.closest('[data-edit-event]');
+      if (editButton) {
+        const eventId = editButton.dataset.editEvent;
+        openModal('edit', state.get('selectedDate'), eventId);
+      }
+    });
+
+    document.addEventListener('dblclick', (event) => {
+      const eventCard = event.target.closest('.event-card');
+      if (!eventCard) return;
+
+      const eventId = eventCard.dataset.eventId;
+      openModal('edit', state.get('selectedDate'), eventId);
     });
 
     document.addEventListener('pointerdown', (event) => {
@@ -163,7 +243,7 @@
       if (!eventCard) return;
 
       const eventId = eventCard.dataset.eventId;
-      const item = state.getIn(['plan', 'items']).find((entry) => entry.get('id') === eventId);
+      const item = findEventById(state.getIn(['plan', 'items']), eventId);
       if (!item) return;
 
       state = state.set('selectedEventId', eventId);
@@ -172,6 +252,7 @@
         originalStartDate: item.get('startDate'),
         originalEndDate: item.get('endDate')
       }));
+
       eventCard.setPointerCapture && eventCard.setPointerCapture(event.pointerId);
     });
 
@@ -185,12 +266,13 @@
       const targetDate = column.dataset.date;
       if (!targetDate) return;
 
-      const item = state.getIn(['plan', 'items']).find((entry) => entry.get('id') === dragState.get('eventId'));
+      const item = findEventById(state.getIn(['plan', 'items']), dragState.get('eventId'));
       if (!item) return;
 
       const originalStart = parseISO(dragState.get('originalStartDate'));
       const originalEnd = parseISO(dragState.get('originalEndDate'));
       const targetStart = parseISO(targetDate);
+
       const deltaDays = diffDays(targetStart, originalStart);
       const duration = diffDays(originalEnd, originalStart) + 1;
       const nextStart = offsetDate(dragState.get('originalStartDate'), deltaDays);
@@ -216,70 +298,120 @@
       form.addEventListener('submit', (event) => {
         event.preventDefault();
 
+        const id = form.eventId.value || 'evt-' + Date.now();
         const title = form.title.value.trim();
         const type = form.type.value;
         const startDate = form.startDate.value;
         const endDate = form.endDate.value;
         const notes = form.notes.value.trim() || 'No notes.';
 
-        if (!title) {
-          alert('Please enter an event title.');
-          return;
+        if (!title) { alert('Please enter an event title.'); return; }
+        if (!startDate || !endDate) { alert('Please choose both dates.'); return; }
+        if (startDate > endDate) { alert('End date cannot be before start date.'); return; }
+
+        if (form.dataset.mode === 'edit') {
+          state = state.updateIn(['plan', 'items'], (items) =>
+            items.map((entry) => {
+              if (entry.get('id') !== id) return entry;
+              return entry
+                .set('title', title)
+                .set('type', type)
+                .set('startDate', startDate)
+                .set('endDate', endDate)
+                .set('notes', notes);
+            })
+          );
+        } else {
+          const newEvent = fromJS({
+            id,
+            title,
+            type,
+            startDate,
+            endDate,
+            notes,
+            status: 'planned'
+          });
+
+          state = state.updateIn(['plan', 'items'], (items) => items.push(newEvent));
         }
 
-        if (!startDate || !endDate) {
-          alert('Please choose both start and end dates.');
-          return;
-        }
-
-        if (startDate > endDate) {
-          alert('End date cannot be before start date.');
-          return;
-        }
-
-        const newEvent = fromJS({
-          id: 'evt-' + Date.now(),
-          title,
-          type,
-          startDate,
-          endDate,
-          notes,
-          status: 'planned'
-        });
-
-        state = state.updateIn(['plan', 'items'], (items) => items.push(newEvent));
-        state = state.set('selectedEventId', newEvent.get('id'));
+        state = state.set('selectedEventId', id);
         state = state.set('selectedDate', startDate);
-        closeEventModal();
+        closeModal();
+        render();
+      });
+    }
+
+    const deleteBtn = document.getElementById('delete-event-btn');
+    if (deleteBtn) {
+      deleteBtn.addEventListener('click', () => {
+        const eventId = document.getElementById('event-id').value;
+        if (!eventId) return;
+
+        state = state.updateIn(['plan', 'items'], (items) =>
+          items.filter((item) => item.get('id') !== eventId)
+        );
+
+        state = state.set('selectedEventId', null);
+        closeModal();
         render();
       });
     }
   }
 
-  function openEventModal(defaultDate) {
+  function openModal(mode, selectedDate, eventId) {
     const modal = document.getElementById('event-modal');
+    const form = document.getElementById('event-form');
+    const titleInput = document.getElementById('event-title');
     const startInput = document.getElementById('event-start');
     const endInput = document.getElementById('event-end');
+    const notesInput = document.getElementById('event-notes');
+    const dateId = document.getElementById('event-id');
+    const deleteBtn = document.getElementById('delete-event-btn');
 
-    if (!modal || !startInput || !endInput) return;
+    if (!modal || !form || !titleInput || !startInput || !endInput || !notesInput || !dateId) return;
 
-    const chosenDate = defaultDate || state.get('selectedDate');
-    startInput.value = chosenDate;
-    endInput.value = chosenDate;
+    form.dataset.mode = mode;
+
+    if (mode === 'edit' && eventId) {
+      const item = findEventById(state.getIn(['plan', 'items']), eventId);
+      if (!item) return;
+
+      document.getElementById('event-modal-title').textContent = 'Edit Event';
+      dateId.value = item.get('id');
+      titleInput.value = item.get('title');
+      form.type.value = item.get('type');
+      startInput.value = item.get('startDate');
+      endInput.value = item.get('endDate');
+      notesInput.value = item.get('notes');
+      deleteBtn.classList.remove('hidden');
+    } else {
+      document.getElementById('event-modal-title').textContent = 'Create Event';
+      form.reset();
+      dateId.value = '';
+      startInput.value = selectedDate || state.get('selectedDate');
+      endInput.value = selectedDate || state.get('selectedDate');
+      deleteBtn.classList.add('hidden');
+    }
 
     modal.classList.remove('hidden');
     modal.setAttribute('aria-hidden', 'false');
-    setTimeout(() => document.getElementById('event-title').focus(), 20);
+    setTimeout(() => titleInput.focus(), 30);
   }
 
-  function closeEventModal() {
+  function closeModal() {
     const modal = document.getElementById('event-modal');
     const form = document.getElementById('event-form');
     if (modal) {
       modal.classList.add('hidden');
       modal.setAttribute('aria-hidden', 'true');
     }
-    if (form) form.reset();
+    if (form) {
+      form.reset();
+      form.dataset.mode = 'create';
+    }
+    const deleteBtn = document.getElementById('delete-event-btn');
+    if (deleteBtn) deleteBtn.classList.add('hidden');
   }
 
   function renderCurrentView(view, selectedDate, items, selectedEventId) {
@@ -343,8 +475,7 @@
       const iso = toISODate(current);
       const isSelected = iso === selectedDate;
 
-      const cards = items
-        .filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'))
+      const cards = items.filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'))
         .map((item) => `
           <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
             <span class="event-label">${escapeHtml(item.get('title'))}</span>
@@ -369,8 +500,7 @@
 
   function renderDayView(selectedDate, items, selectedEventId) {
     const current = parseISO(selectedDate);
-    const cards = items
-      .filter((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'))
+    const cards = items.filter((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'))
       .map((item) => `
         <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
           <span class="event-label">${escapeHtml(item.get('title'))}</span>
@@ -391,7 +521,7 @@
   }
 
   function renderDetail(selectedDate, items, selectedEventId) {
-    const match = items.find((item) => item.get('id') === selectedEventId)
+    const match = findEventById(items, selectedEventId)
       || items.find((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'));
 
     if (!match) {
@@ -414,6 +544,10 @@
       <div class="detail-field">
         <span class="detail-label">Notes</span>
         <div class="detail-value">${escapeHtml(match.get('notes'))}</div>
+      </div>
+
+      <div class="detail-field">
+        <button class="secondary-btn" data-edit-event="${match.get('id')}">Edit Event</button>
       </div>
     `;
   }
@@ -469,6 +603,11 @@
       day: 'numeric',
       year: 'numeric'
     });
+  }
+
+  function findEventById(items, eventId) {
+    if (!eventId) return null;
+    return items.find((item) => item.get('id') === eventId) || null;
   }
 
   function escapeHtml(value) {

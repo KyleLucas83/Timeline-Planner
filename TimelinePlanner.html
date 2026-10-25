@@ -19,6 +19,8 @@
         </div>
 
         <form id="event-form">
+          <input type="hidden" name="eventId" id="event-id" />
+
           <div class="form-row">
             <label for="event-title">Title</label>
             <input id="event-title" name="title" type="text" required />
@@ -52,6 +54,8 @@
           </div>
 
           <div class="form-actions">
+            <button type="button" class="danger-btn hidden" id="delete-event-btn">Delete</button>
+            <div class="action-spacer"></div>
             <button type="button" class="secondary-btn" data-close="modal">Cancel</button>
             <button type="submit" class="primary-btn">Save Event</button>
           </div>
