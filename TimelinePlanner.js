@@ -13,6 +13,7 @@
   const { fromJS } = immutable;
   const STORAGE_KEY = 'timeline-planner-state-v1';
   const THEME_KEY = 'timeline-planner-theme';
+  let lastStatusText = 'Ready';
 
   function defaultState() {
     const today = new Date();
@@ -82,8 +83,7 @@
 
   function loadTheme() {
     try {
-      const savedTheme = localStorage.getItem(THEME_KEY) || 'standard';
-      return savedTheme;
+      return localStorage.getItem(THEME_KEY) || 'standard';
     } catch (error) {
       return 'standard';
     }
@@ -94,6 +94,24 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState.toJS()));
     } catch (error) {
       console.warn('Could not save timeline state:', error);
+    }
+  }
+
+  function setStatus(text, isWarning) {
+    lastStatusText = text;
+    const statusEl = document.getElementById('save-status');
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.classList.toggle('warn', !!isWarning);
+  }
+
+  function applyTheme(themeName) {
+    const nextTheme = themeName || 'standard';
+    document.body.setAttribute('data-theme', nextTheme);
+    try {
+      localStorage.setItem(THEME_KEY, nextTheme);
+    } catch (error) {
+      console.warn('Could not save selected theme:', error);
     }
   }
 
@@ -128,7 +146,11 @@
                 <option value="sky">Sky Theme</option>
               </select>
             </div>
-            <button class="secondary-btn" id="today-btn">Today</button>
+            <div id="save-status" class="save-status">${lastStatusText}</div>
+            <button class="save-btn" id="save-plan-btn">Save</button>
+            <button class="export-btn" id="export-json-btn">Export</button>
+            <button class="import-btn" id="import-json-btn">Import</button>
+            <input type="file" id="json-import-input" class="hidden" accept="application/json" />
             <button class="primary-btn" id="new-item-btn">+ New Event</button>
           </div>
         </header>
@@ -158,17 +180,15 @@
       </div>
     `;
 
-    applyStoredTheme();
+    applyTheme(loadTheme());
     bindHandlers();
-    saveState(state);
-  }
-
-  function applyStoredTheme() {
-    const theme = loadTheme();
-    document.body.setAttribute('data-theme', theme);
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
-      themeSelect.value = theme;
+      themeSelect.value = loadTheme();
+    }
+    const saveStatus = document.getElementById('save-status');
+    if (saveStatus) {
+      saveStatus.textContent = lastStatusText;
     }
   }
 
@@ -180,6 +200,13 @@
       });
     });
 
+    const themeSelect = document.getElementById('theme-select');
+    if (themeSelect) {
+      themeSelect.addEventListener('change', (event) => {
+        applyTheme(event.target.value);
+      });
+    }
+
     const todayBtn = document.getElementById('today-btn');
     if (todayBtn) {
       todayBtn.addEventListener('click', () => {
@@ -188,19 +215,70 @@
       });
     }
 
-    const themeSelect = document.getElementById('theme-select');
-    if (themeSelect) {
-      themeSelect.addEventListener('change', (event) => {
-        const selectedTheme = event.target.value;
-        document.body.setAttribute('data-theme', selectedTheme);
-        localStorage.setItem(THEME_KEY, selectedTheme);
-      });
-    }
-
     const newItemBtn = document.getElementById('new-item-btn');
     if (newItemBtn) {
       newItemBtn.addEventListener('click', () => {
         openModal('create', state.get('selectedDate'));
+      });
+    }
+
+    const saveBtn = document.getElementById('save-plan-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        saveState(state);
+        setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
+      });
+    }
+
+    const exportBtn = document.getElementById('export-json-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        const payload = {
+          exportedAt: new Date().toISOString(),
+          theme: loadTheme(),
+          state: state.toJS()
+        };
+
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'timeline-planner.json';
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+
+        setStatus('Exported JSON');
+      });
+    }
+
+    const importBtn = document.getElementById('import-json-btn');
+    const importInput = document.getElementById('json-import-input');
+    if (importBtn && importInput) {
+      importBtn.addEventListener('click', () => importInput.click());
+      importInput.addEventListener('change', (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = JSON.parse(String(reader.result));
+            const importedState = parsed.state ? fromJS(parsed.state) : defaultState();
+            state = importedState;
+            if (parsed.theme) {
+              applyTheme(parsed.theme);
+            }
+            render();
+            setStatus('Imported JSON');
+          } catch (error) {
+            console.warn('Import failed:', error);
+            setStatus('Import failed', true);
+          }
+        };
+        reader.readAsText(file);
+        importInput.value = '';
       });
     }
 
@@ -337,6 +415,7 @@
 
         state = state.set('selectedEventId', id);
         state = state.set('selectedDate', startDate);
+        setStatus('Saved ' + new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }));
         closeModal();
         render();
       });
@@ -353,6 +432,7 @@
         );
 
         state = state.set('selectedEventId', null);
+        setStatus('Event deleted');
         closeModal();
         render();
       });
