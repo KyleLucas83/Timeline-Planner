@@ -130,32 +130,12 @@
 
   let state = loadState();
 
-  function buildTimelineLabels(selectedDate, view) {
-    const labels = [];
-    const stepDays = getSliderStepDays(view);
-    const totalSpan = getSliderRangeDays(view);
-    const rangeStart = offsetDate(selectedDate, -Math.floor(totalSpan / 2));
-
-    for (let index = -6; index <= 6; index += 1) {
-      const labelDate = offsetDate(rangeStart, index * stepDays);
-      const leftPercent = ((index + 6) / 12) * 100;
-      const bubbleClass = index === 0 ? 'center' : (index % 2 === 0 ? 'below' : 'above');
-      labels.push(`
-        <div class="timeline-bubble ${bubbleClass}" style="left: ${leftPercent}%">
-          ${formatTimelineLabel(labelDate, view)}
-        </div>
-      `);
-    }
-
-    return labels.join('');
-  }
-
   function getSliderRangeDays(view) {
     switch (view) {
       case 'day': return 12;
-      case 'week': return 84;
+      case 'week': return 42;
       case 'month':
-      default: return 365;
+      default: return 180;
     }
   }
 
@@ -168,15 +148,31 @@
     }
   }
 
+  function buildTimelineLabels(selectedDate, view) {
+    const step = getSliderStepDays(view);
+    const centerOffset = getSliderRangeDays(view) / 2;
+    const labels = [];
+
+    for (let index = -6; index <= 6; index += 1) {
+      const labelDate = offsetDate(selectedDate, index * step);
+      const leftPercent = ((index + 6) / 12) * 100;
+      const bubbleClass = index === 0 ? 'center' : (index % 2 === 0 ? 'below' : 'above');
+      labels.push(`
+        <div class="timeline-bubble ${bubbleClass}" style="left: ${leftPercent}%">
+          ${formatTimelineLabel(labelDate, view)}
+        </div>
+      `);
+    }
+
+    return labels.join('');
+  }
+
   function formatTimelineLabel(dateString, view) {
     const date = parseISO(dateString);
-    if (view === 'day') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    if (view === 'month') {
+      return date.toLocaleDateString('en-US', { month: 'short' });
     }
-    if (view === 'week') {
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    }
-    return date.toLocaleDateString('en-US', { month: 'short' });
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
   function render() {
@@ -185,14 +181,14 @@
     const items = state.getIn(['plan', 'items']);
     const selectedEventId = state.get('selectedEventId');
     const isDirty = !!state.get('isDirty');
-    const sliderPercent = sliderDrag ? sliderDrag.handlePercent : 50;
+    const handlePercent = sliderDrag ? sliderDrag.handlePercent : 50;
     const timelineLabels = buildTimelineLabels(selectedDate, view);
 
     root.innerHTML = `
       <div class="timeline-app">
         <header class="topbar">
           <div class="topbar-left">
-            <div class="brand">Timeline Planner</div>
+            <div class="brand">GoodOmens</div>
             <div class="view-toggle">
               <button class="view-button ${view === 'month' ? 'active' : ''}" data-view="month">Month</button>
               <button class="view-button ${view === 'week' ? 'active' : ''}" data-view="week">Week</button>
@@ -226,10 +222,10 @@
           </div>
 
           <div class="focus-rail" id="focus-rail">
-            <div class="timeline-labels top">${timelineLabels}</div>
+            <div class="timeline-labels">${timelineLabels}</div>
             <div class="focus-track"></div>
-            <div class="focus-line" style="left: ${sliderPercent}%"></div>
-            <div class="focus-handle" id="focus-handle" style="left: ${sliderPercent}%"></div>
+            <div class="focus-line" style="left: ${handlePercent}%"></div>
+            <div class="focus-handle" id="focus-handle" style="left: ${handlePercent}%"></div>
           </div>
 
           <div class="${view === 'day' ? 'day-grid' : (view === 'week' ? 'week-grid' : 'month-grid')}">
@@ -267,6 +263,7 @@
     document.querySelectorAll('.view-button').forEach((button) => {
       button.addEventListener('click', () => {
         state = state.set('view', button.dataset.view);
+        sliderDrag = null;
         render();
       });
     });
@@ -386,12 +383,14 @@
         const rail = document.getElementById('focus-rail');
         if (!rail) return;
 
+        const rect = rail.getBoundingClientRect();
         sliderDrag = {
           baseDate: state.get('selectedDate'),
-          currentDate: state.get('selectedDate'),
-          handlePercent: 50
+          handlePercent: 50,
+          startX: event.clientX,
+          rectWidth: rect.width,
+          pointerId: event.pointerId
         };
-
         event.preventDefault();
         return;
       }
@@ -428,11 +427,10 @@
         const rect = rail.getBoundingClientRect();
         const pos = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
         const rangeDays = getSliderRangeDays(state.get('view'));
-        const deltaDays = Math.round(((pos - 50) / 100) * rangeDays);
-        const nextDate = offsetDate(sliderDrag.baseDate, deltaDays);
+        const deltaDays = ((pos - 50) / 50) * rangeDays;
+        const nextDate = offsetDate(sliderDrag.baseDate, Math.round(deltaDays));
 
         state = state.set('selectedDate', nextDate);
-        sliderDrag.currentDate = nextDate;
         sliderDrag.handlePercent = pos;
         render();
         return;
@@ -477,7 +475,6 @@
 
     document.addEventListener('pointerup', () => {
       if (sliderDrag) {
-        state = state.set('selectedDate', sliderDrag.currentDate || state.get('selectedDate'));
         sliderDrag = null;
         render();
         return;
@@ -748,18 +745,6 @@
         <button class="secondary-btn" data-edit-event="${match.get('id')}">Edit Event</button>
       </div>
     `;
-  }
-
-  function getFocusPercent(dateString) {
-    const d = parseISO(dateString);
-    const monthLength = getMonthLength(d);
-    const day = d.getDate();
-    const ratio = (day - 1) / Math.max(monthLength - 1, 1);
-    return Math.max(0, Math.min(100, ratio * 100));
-  }
-
-  function getMonthLength(date) {
-    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   }
 
   function parseISO(value) {
