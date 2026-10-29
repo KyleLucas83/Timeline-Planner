@@ -14,6 +14,8 @@
   const STORAGE_KEY = 'timeline-planner-state-v1';
   const THEME_KEY = 'timeline-planner-theme';
   let lastStatusText = 'Saved';
+  let sliderDrag = null;
+  let handlersBound = false;
 
   function defaultState() {
     const today = new Date();
@@ -128,13 +130,63 @@
 
   let state = loadState();
 
+  function buildTimelineLabels(selectedDate, view) {
+    const labels = [];
+    const stepDays = getSliderStepDays(view);
+    const totalSpan = getSliderRangeDays(view);
+    const rangeStart = offsetDate(selectedDate, -Math.floor(totalSpan / 2));
+
+    for (let index = -6; index <= 6; index += 1) {
+      const labelDate = offsetDate(rangeStart, index * stepDays);
+      const leftPercent = ((index + 6) / 12) * 100;
+      const bubbleClass = index === 0 ? 'center' : (index % 2 === 0 ? 'below' : 'above');
+      labels.push(`
+        <div class="timeline-bubble ${bubbleClass}" style="left: ${leftPercent}%">
+          ${formatTimelineLabel(labelDate, view)}
+        </div>
+      `);
+    }
+
+    return labels.join('');
+  }
+
+  function getSliderRangeDays(view) {
+    switch (view) {
+      case 'day': return 12;
+      case 'week': return 84;
+      case 'month':
+      default: return 365;
+    }
+  }
+
+  function getSliderStepDays(view) {
+    switch (view) {
+      case 'day': return 1;
+      case 'week': return 7;
+      case 'month':
+      default: return 30;
+    }
+  }
+
+  function formatTimelineLabel(dateString, view) {
+    const date = parseISO(dateString);
+    if (view === 'day') {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+    if (view === 'week') {
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+    return date.toLocaleDateString('en-US', { month: 'short' });
+  }
+
   function render() {
     const selectedDate = state.get('selectedDate');
     const view = state.get('view');
     const items = state.getIn(['plan', 'items']);
     const selectedEventId = state.get('selectedEventId');
-    const focusPercent = getFocusPercent(selectedDate);
     const isDirty = !!state.get('isDirty');
+    const sliderPercent = sliderDrag ? sliderDrag.handlePercent : 50;
+    const timelineLabels = buildTimelineLabels(selectedDate, view);
 
     root.innerHTML = `
       <div class="timeline-app">
@@ -174,9 +226,10 @@
           </div>
 
           <div class="focus-rail" id="focus-rail">
+            <div class="timeline-labels top">${timelineLabels}</div>
             <div class="focus-track"></div>
-            <div class="focus-line" style="left: ${focusPercent}%"></div>
-            <div class="focus-handle" id="focus-handle" style="left: ${focusPercent}%"></div>
+            <div class="focus-line" style="left: ${sliderPercent}%"></div>
+            <div class="focus-handle" id="focus-handle" style="left: ${sliderPercent}%"></div>
           </div>
 
           <div class="${view === 'day' ? 'day-grid' : (view === 'week' ? 'week-grid' : 'month-grid')}">
@@ -193,12 +246,16 @@
     `;
 
     applyTheme(loadTheme());
-    bindHandlers();
+    if (!handlersBound) {
+      bindHandlers();
+      handlersBound = true;
+    }
 
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
       themeSelect.value = loadTheme();
     }
+
     const saveStatus = document.getElementById('save-status');
     if (saveStatus) {
       saveStatus.textContent = isDirty ? 'Unsaved changes' : lastStatusText;
@@ -218,14 +275,6 @@
     if (themeSelect) {
       themeSelect.addEventListener('change', (event) => {
         applyTheme(event.target.value);
-      });
-    }
-
-    const todayBtn = document.getElementById('today-btn');
-    if (todayBtn) {
-      todayBtn.addEventListener('click', () => {
-        state = state.set('selectedDate', toISODate(new Date()));
-        render();
       });
     }
 
@@ -332,6 +381,21 @@
     });
 
     document.addEventListener('pointerdown', (event) => {
+      const sliderHandle = event.target.closest('#focus-handle');
+      if (sliderHandle) {
+        const rail = document.getElementById('focus-rail');
+        if (!rail) return;
+
+        sliderDrag = {
+          baseDate: state.get('selectedDate'),
+          currentDate: state.get('selectedDate'),
+          handlePercent: 50
+        };
+
+        event.preventDefault();
+        return;
+      }
+
       const eventCard = event.target.closest('.event-card');
       if (!eventCard) return;
 
@@ -357,6 +421,23 @@
     });
 
     document.addEventListener('pointermove', (event) => {
+      if (sliderDrag) {
+        const rail = document.getElementById('focus-rail');
+        if (!rail) return;
+
+        const rect = rail.getBoundingClientRect();
+        const pos = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
+        const rangeDays = getSliderRangeDays(state.get('view'));
+        const deltaDays = Math.round(((pos - 50) / 100) * rangeDays);
+        const nextDate = offsetDate(sliderDrag.baseDate, deltaDays);
+
+        state = state.set('selectedDate', nextDate);
+        sliderDrag.currentDate = nextDate;
+        sliderDrag.handlePercent = pos;
+        render();
+        return;
+      }
+
       const dragState = state.get('dragState');
       if (!dragState) return;
 
@@ -395,6 +476,13 @@
     });
 
     document.addEventListener('pointerup', () => {
+      if (sliderDrag) {
+        state = state.set('selectedDate', sliderDrag.currentDate || state.get('selectedDate'));
+        sliderDrag = null;
+        render();
+        return;
+      }
+
       document.querySelectorAll('.event-card.dragging').forEach((node) => node.classList.remove('dragging'));
       state = state.set('dragState', null);
     });
@@ -727,6 +815,10 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 
   render();
