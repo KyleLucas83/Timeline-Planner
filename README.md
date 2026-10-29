@@ -1,9 +1,9 @@
-# Timeline Planner
+# GoodOmens
 
-Plan your future agenda with a streamlined timeline.
+A timeline planner for organizing future commitments, milestones, and agenda items with minimal friction.
 
 ## Overview
-Timeline Planner is a lightweight planning tool for organizing future commitments, milestones, and agenda items with minimal friction. The project is currently in its foundation and planning phase, with a focus on creating a reliable, intuitive scheduling experience.
+GoodOmens is a lightweight planning tool for organizing future commitments, milestones, and agenda items with minimal friction. The project is currently in its foundation and planning phase.
 
 ## Documentation
 - [Roadmap](docs/ROADMAP.md)
