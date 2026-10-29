@@ -1,0 +1,23 @@
+<svg width="640" height="220" viewBox="0 0 640 220" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GoodOmens titlebar banner">
+  <defs>
+    <linearGradient id="gradGlow" x1="0%" x2="100%" y1="0%" y2="100%">
+      <stop offset="0%" stop-color="#d6b4ff"/>
+      <stop offset="50%" stop-color="#93c5fd"/>
+      <stop offset="100%" stop-color="#86efac"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="220" rx="30" fill="#111827"/>
+  <g transform="translate(28 24)">
+    <rect width="172" height="172" rx="36" fill="#1f2937"/>
+    <circle cx="86" cy="86" r="48" fill="none" stroke="url(#gradGlow)" stroke-width="9"/>
+    <path d="M112 54c-9-12-24-18-40-17-27 3-45 29-42 54 3 26 23 45 50 46 13 0 25-4 35-13" fill="none" stroke="#f8fafc" stroke-width="9" stroke-linecap="round"/>
+    <path d="M96 96h-24v15h24" fill="none" stroke="#f8fafc" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M78 75h24" stroke="#f8fafc" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="104" cy="62" r="7" fill="#f8fafc"/>
+  </g>
+  <g transform="translate(232 0)">
+    <text x="0" y="102" fill="#f8fafc" font-family="Arial, Helvetica, sans-serif" font-size="62" font-weight="700" letter-spacing="1.2">GoodOmens</text>
+    <text x="3" y="146" fill="#cbd5e1" font-family="Arial, Helvetica, sans-serif" font-size="24" letter-spacing="4">TIMELINE PLANNER</text>
+    <path d="M5 170H410" stroke="url(#gradGlow)" stroke-width="6" stroke-linecap="round"/>
+  </g>
+</svg>
