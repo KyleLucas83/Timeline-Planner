@@ -26,6 +26,7 @@ GoodOmens helps a user organize future commitments, milestones, and agenda items
 - A single event may span multiple days.
 - A day view should show all events that fall on that date.
 - Dragging an event should move the full date range by the same delta.
+- The timeline is a draggable slider that shifts the displayed calendar forward and backwards to a different month, week or day depending on the current display.
 - When an event is edited, the timeline should immediately reflect the updated dates and title.
 - Empty dates should remain readable and calm; avoid cluttered or visually noisy layouts.
 
@@ -50,6 +51,7 @@ GoodOmens helps a user organize future commitments, milestones, and agenda items
 - Click an event to select it.
 - Double-click an event to open edit mode.
 - Dragging should feel predictable and immediate.
+- The timeline slider should allow the user to move forward and backward through time based on the current view.
 - Canceling a modal should restore prior UI state without losing unrelated work.
 - Only the relevant event should be deleted when the delete action is used.
 - Buttons and controls should remain visible and obvious without requiring hover-only interactions.
