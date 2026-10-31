@@ -24,6 +24,7 @@
     return fromJS({
       selectedDate: initialDate,
       selectedEventId: 'evt-2',
+      activeTagFilter: 'all',
       view: 'month',
       modalMode: 'create',
       dragState: null,
@@ -39,6 +40,8 @@
             startDate: offsetDate(initialDate, -2),
             endDate: offsetDate(initialDate, 2),
             notes: 'Review timeline structure and UX flow.',
+            tags: ['design', 'planning'],
+            recurrence: 'weekly',
             status: 'planned'
           },
           {
@@ -48,6 +51,8 @@
             startDate: initialDate,
             endDate: initialDate,
             notes: 'Strength session and mobility work.',
+            tags: ['wellness', 'routine'],
+            recurrence: 'weekly',
             status: 'active'
           },
           {
@@ -57,6 +62,8 @@
             startDate: offsetDate(initialDate, 5),
             endDate: offsetDate(initialDate, 8),
             notes: 'Finalize flights and lodging.',
+            tags: ['travel', 'planning'],
+            recurrence: 'monthly',
             status: 'planned'
           },
           {
@@ -66,6 +73,8 @@
             startDate: offsetDate(initialDate, 12),
             endDate: offsetDate(initialDate, 15),
             notes: 'Final handoff package due.',
+            tags: ['deadline', 'critical'],
+            recurrence: 'none',
             status: 'urgent'
           }
         ]
@@ -130,6 +139,51 @@
 
   let state = loadState();
 
+  function getEventTags(item) {
+    if (!item) return [];
+    const tags = item.get('tags');
+    if (Array.isArray(tags)) return tags.filter(Boolean).map((tag) => String(tag).trim()).filter(Boolean);
+    if (typeof tags === 'string') {
+      return tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function getRecurrenceLabel(value) {
+    if (!value || value === 'none') return '';
+    const labels = {
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      yearly: 'Yearly'
+    };
+    return labels[value] || value;
+  }
+
+  function getAllTags(items) {
+    const unique = new Set();
+    items.forEach((item) => {
+      getEventTags(item).forEach((tag) => unique.add(tag));
+    });
+    return Array.from(unique).sort((left, right) => left.localeCompare(right));
+  }
+
+  function getVisibleItems(items, activeTagFilter) {
+    if (!activeTagFilter || activeTagFilter === 'all') return items;
+    return items.filter((item) => getEventTags(item).includes(activeTagFilter));
+  }
+
+  function renderTagFilters(items) {
+    const allTags = getAllTags(items);
+    const chips = ['all', ...allTags];
+    const activeTag = state.get('activeTagFilter') || 'all';
+
+    return chips.map((tag) => `
+      <button class="tag-filter-chip ${tag === activeTag ? 'selected' : ''}" data-tag-filter="${tag}">
+        ${tag === 'all' ? 'All' : escapeHtml(tag)}
+      </button>
+    `).join('');
+  }
+
   function getSliderRangeDays(view) {
     switch (view) {
       case 'day': return 12;
@@ -179,6 +233,7 @@
     const selectedDate = state.get('selectedDate');
     const view = state.get('view');
     const items = state.getIn(['plan', 'items']);
+    const visibleItems = getVisibleItems(items, state.get('activeTagFilter'));
     const selectedEventId = state.get('selectedEventId');
     const isDirty = !!state.get('isDirty');
     const handlePercent = sliderDrag ? sliderDrag.handlePercent : 50;
@@ -215,6 +270,8 @@
           </div>
         </header>
 
+        <div class="filter-row">${renderTagFilters(items)}</div>
+
         <div class="planner-shell">
           <div class="timeline-toolbar">
             <div class="period-label">${formatMonthYear(selectedDate)}</div>
@@ -229,7 +286,7 @@
           </div>
 
           <div class="${view === 'day' ? 'day-grid' : (view === 'week' ? 'week-grid' : 'month-grid')}">
-            ${renderCurrentView(view, selectedDate, items, selectedEventId)}
+            ${renderCurrentView(view, selectedDate, visibleItems, selectedEventId)}
           </div>
         </div>
 
@@ -347,6 +404,13 @@
       const modalClose = event.target.closest('[data-close="modal"]');
       if (modalClose) {
         closeModal();
+        return;
+      }
+
+      const tagFilterChip = event.target.closest('[data-tag-filter]');
+      if (tagFilterChip) {
+        state = state.set('activeTagFilter', tagFilterChip.dataset.tagFilter || 'all');
+        render();
         return;
       }
 
@@ -495,6 +559,12 @@
         const startDate = form.startDate.value;
         const endDate = form.endDate.value;
         const notes = form.notes.value.trim() || 'No notes.';
+        const tags = (form.tags.value || '')
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean);
+        const recurrence = form.recurrence.value || 'none';
+        const status = form.status.value || 'planned';
 
         if (!title) { alert('Please enter an event title.'); return; }
         if (!startDate || !endDate) { alert('Please choose both dates.'); return; }
@@ -509,7 +579,10 @@
                 .set('type', type)
                 .set('startDate', startDate)
                 .set('endDate', endDate)
-                .set('notes', notes);
+                .set('notes', notes)
+                .set('tags', fromJS(tags))
+                .set('recurrence', recurrence)
+                .set('status', status);
             })
           );
         } else {
@@ -520,7 +593,9 @@
             startDate,
             endDate,
             notes,
-            status: 'planned'
+            tags,
+            recurrence,
+            status
           });
 
           state = state.updateIn(['plan', 'items'], (items) => items.push(newEvent));
@@ -556,13 +631,17 @@
     const modal = document.getElementById('event-modal');
     const form = document.getElementById('event-form');
     const titleInput = document.getElementById('event-title');
+    const typeInput = document.getElementById('event-type');
     const startInput = document.getElementById('event-start');
     const endInput = document.getElementById('event-end');
     const notesInput = document.getElementById('event-notes');
+    const tagsInput = document.getElementById('event-tags');
+    const recurrenceInput = document.getElementById('event-recurring');
+    const statusInput = document.getElementById('event-status');
     const dateId = document.getElementById('event-id');
     const deleteBtn = document.getElementById('delete-event-btn');
 
-    if (!modal || !form || !titleInput || !startInput || !endInput || !notesInput || !dateId) return;
+    if (!modal || !form || !titleInput || !typeInput || !startInput || !endInput || !notesInput || !tagsInput || !recurrenceInput || !statusInput || !dateId) return;
 
     form.dataset.mode = mode;
 
@@ -573,15 +652,21 @@
       document.getElementById('event-modal-title').textContent = 'Edit Event';
       dateId.value = item.get('id');
       titleInput.value = item.get('title');
-      form.type.value = item.get('type');
+      typeInput.value = item.get('type') || 'work';
       startInput.value = item.get('startDate');
       endInput.value = item.get('endDate');
       notesInput.value = item.get('notes');
+      tagsInput.value = (getEventTags(item)).join(', ');
+      recurrenceInput.value = item.get('recurrence') || 'none';
+      statusInput.value = item.get('status') || 'planned';
       deleteBtn.classList.remove('hidden');
     } else {
       document.getElementById('event-modal-title').textContent = 'Create Event';
       form.reset();
       dateId.value = '';
+      typeInput.value = 'work';
+      recurrenceInput.value = 'none';
+      statusInput.value = 'planned';
       startInput.value = selectedDate || state.get('selectedDate');
       endInput.value = selectedDate || state.get('selectedDate');
       deleteBtn.classList.add('hidden');
@@ -605,6 +690,20 @@
     }
     const deleteBtn = document.getElementById('delete-event-btn');
     if (deleteBtn) deleteBtn.classList.add('hidden');
+  }
+
+  function renderEventBadges(item) {
+    const badges = [];
+    const tags = getEventTags(item);
+    const recurrence = item.get('recurrence');
+
+    if (tags.length > 0) {
+      badges.push(`<span class="meta-badge tag">${escapeHtml(tags[0])}</span>`);
+    }
+    if (recurrence && recurrence !== 'none') {
+      badges.push(`<span class="meta-badge recurrence">${escapeHtml(getRecurrenceLabel(recurrence))}</span>`);
+    }
+    return badges.join('');
   }
 
   function renderCurrentView(view, selectedDate, items, selectedEventId) {
@@ -635,6 +734,7 @@
           return `
             <div class="event-card ${type} ${isSelectedEvent ? 'selected' : ''}" data-event-id="${item.get('id')}">
               <span class="event-label">${escapeHtml(item.get('title'))}</span>
+              <div class="event-badges">${renderEventBadges(item)}</div>
               <span class="event-dot">•</span>
             </div>
           `;
@@ -672,6 +772,7 @@
         .map((item) => `
           <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
             <span class="event-label">${escapeHtml(item.get('title'))}</span>
+            <div class="event-badges">${renderEventBadges(item)}</div>
             <span class="event-dot">•</span>
           </div>
         `)
@@ -697,6 +798,7 @@
       .map((item) => `
         <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
           <span class="event-label">${escapeHtml(item.get('title'))}</span>
+          <div class="event-badges">${renderEventBadges(item)}</div>
           <span class="event-dot">•</span>
         </div>
       `)
@@ -729,6 +831,16 @@
       <div class="detail-field">
         <span class="detail-label">Type</span>
         <div class="type-pill ${match.get('type')}">${match.get('type')}</div>
+      </div>
+
+      <div class="detail-field">
+        <span class="detail-label">Tags</span>
+        <div class="detail-value">${escapeHtml((getEventTags(match).join(', ') || 'No tags'))}</div>
+      </div>
+
+      <div class="detail-field">
+        <span class="detail-label">Recurrence</span>
+        <div class="detail-value">${escapeHtml(getRecurrenceLabel(match.get('recurrence')) || 'Does not repeat')}</div>
       </div>
 
       <div class="detail-field">

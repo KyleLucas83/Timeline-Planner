@@ -43,6 +43,31 @@
             </select>
           </div>
 
+          <div class="form-row">
+            <label for="event-tags">Tags</label>
+            <input id="event-tags" name="tags" type="text" placeholder="planning, health, travel" />
+          </div>
+
+          <div class="form-row two-col">
+            <div>
+              <label for="event-recurring">Recurring</label>
+              <select id="event-recurring" name="recurrence">
+                <option value="none">Does not repeat</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label for="event-status">Status</label>
+              <select id="event-status" name="status">
+                <option value="planned">Planned</option>
+                <option value="active">Active</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
           <div class="form-row two-col">
             <div>
               <label for="event-start">Start date</label>
