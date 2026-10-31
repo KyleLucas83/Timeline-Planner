@@ -13,8 +13,11 @@
   const { fromJS } = immutable;
   const STORAGE_KEY = 'timeline-planner-state-v1';
   const THEME_KEY = 'timeline-planner-theme';
+  const VIEW_KEY = 'timeline-planner-view';
+  const SQL_JS_ASSETS = 'assets/vendor/';
   let lastStatusText = 'Saved';
   let sliderDrag = null;
+  let sqlJsPromise = null;
   let handlersBound = false;
 
   function defaultState() {
@@ -25,7 +28,7 @@
       selectedDate: initialDate,
       selectedEventId: 'evt-2',
       activeTagFilter: 'all',
-      view: 'month',
+      view: loadView(),
       modalMode: 'create',
       dragState: null,
       isDirty: false,
@@ -86,11 +89,82 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return defaultState();
-      return fromJS(JSON.parse(raw));
+      return fromJS(normalizeState(JSON.parse(raw)));
     } catch (error) {
       console.warn('Could not load timeline state:', error);
       return defaultState();
     }
+  }
+
+  function normalizeState(payload, preferStoredView = true) {
+    const defaults = defaultState().toJS();
+    const canonical = payload && payload.data && payload.customizations;
+    const legacyState = canonical ? {} : (payload && payload.state ? payload.state : payload);
+    const plan = canonical ? payload.data.plan : legacyState && legacyState.plan;
+    if (!plan || !Array.isArray(plan.items)) {
+      throw new Error('The saved timeline data is missing its planner events.');
+    }
+
+    const settings = canonical ? payload.settings || {} : {};
+    const customizations = canonical ? payload.customizations : {};
+    const legacyTheme = payload && payload.theme ? payload.theme : loadTheme();
+    const theme = customizations.theme || legacyTheme;
+    const savedView = canonical ? settings.view : legacyState && legacyState.view;
+
+    return {
+      ...defaults,
+      ...legacyState,
+      plan,
+      selectedDate: customizations.activeDate || (legacyState && legacyState.selectedDate) || defaults.selectedDate,
+      selectedEventId: customizations.selectedEventId !== undefined
+        ? customizations.selectedEventId
+        : legacyState && legacyState.selectedEventId !== undefined
+          ? legacyState.selectedEventId
+          : defaults.selectedEventId,
+      activeTagFilter: customizations.activeTagFilter || (legacyState && legacyState.activeTagFilter) || 'all',
+      view: preferStoredView
+        ? loadView(['month', 'week', 'day'].includes(savedView) ? savedView : defaults.view)
+        : (['month', 'week', 'day'].includes(savedView) ? savedView : loadView(defaults.view)),
+      theme: ['standard', 'dark', 'forest', 'sky'].includes(theme) ? theme : 'standard',
+      modalMode: 'create',
+      dragState: null,
+      isDirty: false
+    };
+  }
+
+  function buildSaveBundle(sourceState = state) {
+    const current = sourceState.toJS();
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        plan: current.plan
+      },
+      settings: {
+        view: current.view
+      },
+      customizations: {
+        theme: loadTheme(),
+        activeDate: current.selectedDate,
+        selectedEventId: current.selectedEventId,
+        activeTagFilter: current.activeTagFilter
+      }
+    };
+  }
+
+  function initializeSqlJs() {
+    if (!sqlJsPromise) {
+      if (typeof window.initSqlJs !== 'function') {
+        return Promise.reject(new Error('SQLite support could not be loaded. Check your connection and try again.'));
+      }
+      sqlJsPromise = window.initSqlJs({
+        locateFile: (file) => `${SQL_JS_ASSETS}${file}`
+      }).catch((error) => {
+        sqlJsPromise = null;
+        throw error;
+      });
+    }
+    return sqlJsPromise;
   }
 
   function loadTheme() {
@@ -101,11 +175,42 @@
     }
   }
 
-  function saveState(nextState) {
+  function loadView(fallbackView = 'month') {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState.toJS()));
+      const savedView = localStorage.getItem(VIEW_KEY);
+      return ['month', 'week', 'day'].includes(savedView) ? savedView : fallbackView;
     } catch (error) {
-      console.warn('Could not save timeline state:', error);
+      return fallbackView;
+    }
+  }
+
+  function saveState(nextState) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSaveBundle(nextState)));
+  }
+
+  function downloadFile(content, mimeType, filename) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function readSqliteBundle(file) {
+    const SQL = await initializeSqlJs();
+    const database = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
+    try {
+      const results = database.exec('SELECT payload FROM timeline_data WHERE id = 1');
+      if (!results.length || !results[0].values.length) {
+        throw new Error('The SQLite file does not contain a saved timeline plan.');
+      }
+      return JSON.parse(results[0].values[0][0]);
+    } finally {
+      database.close();
     }
   }
 
@@ -124,6 +229,14 @@
       localStorage.setItem(THEME_KEY, nextTheme);
     } catch (error) {
       console.warn('Could not save selected theme:', error);
+    }
+  }
+
+  function saveView(viewName) {
+    try {
+      localStorage.setItem(VIEW_KEY, viewName);
+    } catch (error) {
+      console.warn('Could not save selected view:', error);
     }
   }
 
@@ -243,7 +356,7 @@
       <div class="timeline-app">
         <header class="topbar">
           <div class="topbar-left">
-            <div class="brand">GoodOmens</div>
+            <img class="brand" src="assets/goodomens-titlebar.svg" alt="GoodOmens Timeline Planner" />
             <div class="view-toggle">
               <button class="view-button ${view === 'month' ? 'active' : ''}" data-view="month">Month</button>
               <button class="view-button ${view === 'week' ? 'active' : ''}" data-view="week">Week</button>
@@ -262,10 +375,11 @@
               </select>
             </div>
             <div id="save-status" class="save-status ${isDirty ? 'warn' : ''}">${isDirty ? 'Unsaved changes' : lastStatusText}</div>
-            <button class="save-btn" id="save-plan-btn">Save</button>
-            <button class="export-btn" id="export-json-btn">Export</button>
+            <button class="save-btn" id="save-plan-btn">Save Local</button>
+            <button class="export-btn" id="export-json-btn">Save JSON</button>
+            <button class="export-btn" id="export-sqlite-btn">Save SQLite</button>
             <button class="import-btn" id="import-json-btn">Import</button>
-            <input type="file" id="json-import-input" class="hidden" accept="application/json" />
+            <input type="file" id="json-import-input" class="hidden" accept=".json,.sqlite,.sqlite3,.db,application/json,application/x-sqlite3" />
             <button class="primary-btn" id="new-item-btn">+ New Event</button>
           </div>
         </header>
@@ -299,10 +413,7 @@
     `;
 
     applyTheme(loadTheme());
-    if (!handlersBound) {
-      bindHandlers();
-      handlersBound = true;
-    }
+    bindHandlers();
 
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
@@ -320,6 +431,7 @@
     document.querySelectorAll('.view-button').forEach((button) => {
       button.addEventListener('click', () => {
         state = state.set('view', button.dataset.view);
+        saveView(button.dataset.view);
         sliderDrag = null;
         render();
       });
@@ -342,32 +454,52 @@
     const saveBtn = document.getElementById('save-plan-btn');
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
-        saveState(state.set('isDirty', false));
-        clearDirty();
-        render();
+        const nextState = state.set('isDirty', false);
+        try {
+          saveState(nextState);
+          state = nextState;
+          clearDirty();
+          render();
+        } catch (error) {
+          console.error('Could not save timeline data to localStorage:', error);
+          setStatus('Local save failed', true);
+        }
       });
     }
 
     const exportBtn = document.getElementById('export-json-btn');
     if (exportBtn) {
       exportBtn.addEventListener('click', () => {
-        const payload = {
-          exportedAt: new Date().toISOString(),
-          theme: loadTheme(),
-          state: state.toJS()
-        };
+        try {
+          downloadFile(JSON.stringify(buildSaveBundle(), null, 2), 'application/json', 'timeline-planner.json');
+          setStatus('Saved JSON file');
+        } catch (error) {
+          console.error('Could not export timeline JSON:', error);
+          setStatus('JSON save failed', true);
+        }
+      });
+    }
 
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'timeline-planner.json';
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-
-        setStatus('Exported JSON');
+    const sqliteExportBtn = document.getElementById('export-sqlite-btn');
+    if (sqliteExportBtn) {
+      sqliteExportBtn.addEventListener('click', async () => {
+        let database;
+        try {
+          const SQL = await initializeSqlJs();
+          database = new SQL.Database();
+          database.run('CREATE TABLE timeline_data (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
+          database.run('INSERT INTO timeline_data (id, payload) VALUES (?, ?)', [
+            1,
+            JSON.stringify(buildSaveBundle())
+          ]);
+          downloadFile(database.export(), 'application/x-sqlite3', 'timeline-planner.sqlite');
+          setStatus('Saved SQLite file');
+        } catch (error) {
+          console.error('Could not export timeline SQLite database:', error);
+          setStatus('SQLite save failed', true);
+        } finally {
+          if (database) database.close();
+        }
       });
     }
 
@@ -375,30 +507,32 @@
     const importInput = document.getElementById('json-import-input');
     if (importBtn && importInput) {
       importBtn.addEventListener('click', () => importInput.click());
-      importInput.addEventListener('change', (event) => {
+      importInput.addEventListener('change', async (event) => {
         const file = event.target.files && event.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = () => {
-          try {
-            const parsed = JSON.parse(String(reader.result));
-            const importedState = parsed.state ? fromJS(parsed.state) : defaultState();
-            state = importedState.set('isDirty', false);
-            if (parsed.theme) {
-              applyTheme(parsed.theme);
-            }
-            render();
-            setStatus('Imported JSON');
-          } catch (error) {
-            console.warn('Import failed:', error);
-            setStatus('Import failed', true);
-          }
-        };
-        reader.readAsText(file);
         importInput.value = '';
+        try {
+          const isSqlite = /\.(sqlite|sqlite3|db)$/i.test(file.name)
+            || file.type === 'application/x-sqlite3';
+          const importedPayload = isSqlite
+            ? await readSqliteBundle(file)
+            : JSON.parse(await file.text());
+          state = fromJS(normalizeState(importedPayload, false));
+          applyTheme(state.get('theme'));
+          saveView(state.get('view'));
+          markDirty();
+          render();
+          setStatus('Imported; save to keep', true);
+        } catch (error) {
+          console.error('Import failed:', error);
+          setStatus('Import failed', true);
+        }
       });
     }
+
+    if (handlersBound) return;
+    handlersBound = true;
 
     document.addEventListener('click', (event) => {
       const modalClose = event.target.closest('[data-close="modal"]');
