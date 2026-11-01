@@ -3,9 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Timeline Planner</title>
+    <meta name="application-name" content="GoodOmens" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>GoodOmens</title>
+    <link rel="icon" type="image/svg+xml" href="assets/goodomens-sample.svg" />
+    <link rel="apple-touch-icon" href="assets/goodomens-sample.svg" />
     <link rel="stylesheet" href="TimelinePlanner.css" />
-    <script src="https://cdn.jsdelivr.net/npm/immutable@4.3.7/dist/immutable.min.js"></script>
+    <script src="assets/vendor/immutable.min.js"></script>
+    <script src="assets/vendor/sql-wasm.js"></script>
   </head>
   <body>
     <div id="app"></div>
@@ -35,6 +40,31 @@
               <option value="travel">Travel</option>
               <option value="deadline">Deadline</option>
             </select>
+          </div>
+
+          <div class="form-row">
+            <label for="event-tags">Tags</label>
+            <input id="event-tags" name="tags" type="text" placeholder="planning, health, travel" />
+          </div>
+
+          <div class="form-row two-col">
+            <div>
+              <label for="event-recurring">Recurring</label>
+              <select id="event-recurring" name="recurrence">
+                <option value="none">Does not repeat</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label for="event-status">Status</label>
+              <select id="event-status" name="status">
+                <option value="planned">Planned</option>
+                <option value="active">Active</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
           </div>
 
           <div class="form-row two-col">

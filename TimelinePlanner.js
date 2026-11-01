@@ -13,6 +13,12 @@
   const { fromJS } = immutable;
   const STORAGE_KEY = 'timeline-planner-state-v1';
   const THEME_KEY = 'timeline-planner-theme';
+  const VIEW_KEY = 'timeline-planner-view';
+  const SQL_JS_ASSETS = 'assets/vendor/';
+  let lastStatusText = 'Saved';
+  let sliderDrag = null;
+  let sqlJsPromise = null;
+  let handlersBound = false;
 
   function defaultState() {
     const today = new Date();
@@ -21,9 +27,11 @@
     return fromJS({
       selectedDate: initialDate,
       selectedEventId: 'evt-2',
-      view: 'month',
+      activeTagFilter: 'all',
+      view: loadView(),
       modalMode: 'create',
       dragState: null,
+      isDirty: false,
       plan: {
         id: 'plan-main',
         name: 'Main planner',
@@ -35,6 +43,8 @@
             startDate: offsetDate(initialDate, -2),
             endDate: offsetDate(initialDate, 2),
             notes: 'Review timeline structure and UX flow.',
+            tags: ['design', 'planning'],
+            recurrence: 'weekly',
             status: 'planned'
           },
           {
@@ -44,6 +54,8 @@
             startDate: initialDate,
             endDate: initialDate,
             notes: 'Strength session and mobility work.',
+            tags: ['wellness', 'routine'],
+            recurrence: 'weekly',
             status: 'active'
           },
           {
@@ -53,6 +65,8 @@
             startDate: offsetDate(initialDate, 5),
             endDate: offsetDate(initialDate, 8),
             notes: 'Finalize flights and lodging.',
+            tags: ['travel', 'planning'],
+            recurrence: 'monthly',
             status: 'planned'
           },
           {
@@ -62,6 +76,8 @@
             startDate: offsetDate(initialDate, 12),
             endDate: offsetDate(initialDate, 15),
             notes: 'Final handoff package due.',
+            tags: ['deadline', 'critical'],
+            recurrence: 'none',
             status: 'urgent'
           }
         ]
@@ -73,44 +89,299 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return defaultState();
-      return fromJS(JSON.parse(raw));
+      return fromJS(normalizeState(JSON.parse(raw)));
     } catch (error) {
       console.warn('Could not load timeline state:', error);
       return defaultState();
     }
   }
 
+  function normalizeState(payload, preferStoredView = true) {
+    const defaults = defaultState().toJS();
+    const canonical = payload && payload.data && payload.customizations;
+    const legacyState = canonical ? {} : (payload && payload.state ? payload.state : payload);
+    const plan = canonical ? payload.data.plan : legacyState && legacyState.plan;
+    if (!plan || !Array.isArray(plan.items)) {
+      throw new Error('The saved timeline data is missing its planner events.');
+    }
+
+    const settings = canonical ? payload.settings || {} : {};
+    const customizations = canonical ? payload.customizations : {};
+    const legacyTheme = payload && payload.theme ? payload.theme : loadTheme();
+    const theme = customizations.theme || legacyTheme;
+    const savedView = canonical ? settings.view : legacyState && legacyState.view;
+
+    return {
+      ...defaults,
+      ...legacyState,
+      plan,
+      selectedDate: customizations.activeDate || (legacyState && legacyState.selectedDate) || defaults.selectedDate,
+      selectedEventId: customizations.selectedEventId !== undefined
+        ? customizations.selectedEventId
+        : legacyState && legacyState.selectedEventId !== undefined
+          ? legacyState.selectedEventId
+          : defaults.selectedEventId,
+      activeTagFilter: customizations.activeTagFilter || (legacyState && legacyState.activeTagFilter) || 'all',
+      view: preferStoredView
+        ? loadView(['month', 'week', 'day'].includes(savedView) ? savedView : defaults.view)
+        : (['month', 'week', 'day'].includes(savedView) ? savedView : loadView(defaults.view)),
+      theme: ['standard', 'dark', 'forest', 'sky'].includes(theme) ? theme : 'standard',
+      modalMode: 'create',
+      dragState: null,
+      isDirty: false
+    };
+  }
+
+  function buildSaveBundle(sourceState = state) {
+    const current = sourceState.toJS();
+    return {
+      schemaVersion: 1,
+      exportedAt: new Date().toISOString(),
+      data: {
+        plan: current.plan
+      },
+      settings: {
+        view: current.view
+      },
+      customizations: {
+        theme: loadTheme(),
+        activeDate: current.selectedDate,
+        selectedEventId: current.selectedEventId,
+        activeTagFilter: current.activeTagFilter
+      }
+    };
+  }
+
+  function initializeSqlJs() {
+    if (!sqlJsPromise) {
+      if (typeof window.initSqlJs !== 'function') {
+        return Promise.reject(new Error('SQLite support could not be loaded. Check your connection and try again.'));
+      }
+      sqlJsPromise = window.initSqlJs({
+        locateFile: (file) => `${SQL_JS_ASSETS}${file}`
+      }).catch((error) => {
+        sqlJsPromise = null;
+        throw error;
+      });
+    }
+    return sqlJsPromise;
+  }
+
   function loadTheme() {
     try {
-      const savedTheme = localStorage.getItem(THEME_KEY) || 'standard';
-      return savedTheme;
+      return localStorage.getItem(THEME_KEY) || 'standard';
     } catch (error) {
       return 'standard';
     }
   }
 
-  function saveState(nextState) {
+  function loadView(fallbackView = 'month') {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState.toJS()));
+      const savedView = localStorage.getItem(VIEW_KEY);
+      return ['month', 'week', 'day'].includes(savedView) ? savedView : fallbackView;
     } catch (error) {
-      console.warn('Could not save timeline state:', error);
+      return fallbackView;
     }
   }
 
+  function saveState(nextState) {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildSaveBundle(nextState)));
+  }
+
+  function downloadFile(content, mimeType, filename) {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function readSqliteBundle(file) {
+    const SQL = await initializeSqlJs();
+    const database = new SQL.Database(new Uint8Array(await file.arrayBuffer()));
+    try {
+      const results = database.exec('SELECT payload FROM timeline_data WHERE id = 1');
+      if (!results.length || !results[0].values.length) {
+        throw new Error('The SQLite file does not contain a saved timeline plan.');
+      }
+      return JSON.parse(results[0].values[0][0]);
+    } finally {
+      database.close();
+    }
+  }
+
+  function setStatus(text, isWarning) {
+    lastStatusText = text;
+    const statusEl = document.getElementById('save-status');
+    if (!statusEl) return;
+    statusEl.textContent = text;
+    statusEl.classList.toggle('warn', !!isWarning);
+  }
+
+  function applyTheme(themeName) {
+    const nextTheme = themeName || 'standard';
+    document.body.setAttribute('data-theme', nextTheme);
+    try {
+      localStorage.setItem(THEME_KEY, nextTheme);
+    } catch (error) {
+      console.warn('Could not save selected theme:', error);
+    }
+  }
+
+  function saveView(viewName) {
+    try {
+      localStorage.setItem(VIEW_KEY, viewName);
+    } catch (error) {
+      console.warn('Could not save selected view:', error);
+    }
+  }
+
+  function markDirty() {
+    state = state.set('isDirty', true);
+    setStatus('Unsaved changes', true);
+  }
+
+  function clearDirty() {
+    state = state.set('isDirty', false);
+    setStatus('Saved', false);
+  }
+
   let state = loadState();
+
+  function getEventTags(item) {
+    if (!item) return [];
+    const tags = item.get('tags');
+    if (Array.isArray(tags)) return tags.filter(Boolean).map((tag) => String(tag).trim()).filter(Boolean);
+    if (typeof tags === 'string') {
+      return tags.split(',').map((tag) => tag.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function getRecurrenceLabel(value) {
+    if (!value || value === 'none') return '';
+    const labels = {
+      weekly: 'Weekly',
+      monthly: 'Monthly',
+      yearly: 'Yearly'
+    };
+    return labels[value] || value;
+  }
+
+  function getAllTags(items) {
+    const unique = new Set();
+    items.forEach((item) => {
+      getEventTags(item).forEach((tag) => unique.add(tag));
+    });
+    return Array.from(unique).sort((left, right) => left.localeCompare(right));
+  }
+
+  function getVisibleItems(items, activeTagFilter) {
+    if (!activeTagFilter || activeTagFilter === 'all') return items;
+    return items.filter((item) => getEventTags(item).includes(activeTagFilter));
+  }
+
+  function renderTagFilters(items) {
+    const allTags = getAllTags(items);
+    const chips = ['all', ...allTags];
+    const activeTag = state.get('activeTagFilter') || 'all';
+
+    return chips.map((tag) => `
+      <button class="tag-filter-chip ${tag === activeTag ? 'selected' : ''}" data-tag-filter="${tag}">
+        ${tag === 'all' ? 'All' : escapeHtml(tag)}
+      </button>
+    `).join('');
+  }
+
+  function getSliderRangeDays(view) {
+    switch (view) {
+      case 'day': return 12;
+      case 'week': return 42;
+      case 'month':
+      default: return 180;
+    }
+  }
+
+  function getSliderStepDays(view) {
+    switch (view) {
+      case 'day': return 1;
+      case 'week': return 7;
+      case 'month':
+      default: return 30;
+    }
+  }
+
+  function getTimelineBubblePercent(index) {
+    return ((index + 6) / 12) * 100;
+  }
+
+  function getNearestBubbleIndex(percent) {
+    const normalized = (percent / 100) * 12 - 6;
+    return clamp(Math.round(normalized), -6, 6);
+  }
+
+  function buildTimelineLabels(selectedDate, view) {
+    const step = getSliderStepDays(view);
+    const labels = [];
+
+    for (let index = -6; index <= 6; index += 1) {
+      const labelDate = offsetDate(selectedDate, index * step);
+      const leftPercent = getTimelineBubblePercent(index);
+      const bubbleClass = index === 0 ? 'center' : (index % 2 === 0 ? 'below' : 'above');
+      labels.push(`
+        <div class="timeline-bubble ${bubbleClass}" style="left: ${leftPercent}%">
+          ${formatTimelineLabel(labelDate, view)}
+        </div>
+      `);
+    }
+
+    return labels.join('');
+  }
+
+  function formatTimelineLabel(dateString, view) {
+    const date = parseISO(dateString);
+    if (view === 'month') {
+      return date.toLocaleDateString('en-US', { month: 'short' });
+    }
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function renderDateMarkers(items, dateString) {
+    const starts = items.filter((item) => item.get('startDate') === dateString);
+    if (!starts.length) return '';
+
+    return `
+      <div class="date-markers" aria-label="${starts.length} event${starts.length > 1 ? 's' : ''} on this date">
+        ${starts.map((item) => `
+          <span
+            class="timeline-marker ${item.get('type')}"
+            title="${escapeHtml(item.get('title'))}"
+            aria-label="${escapeHtml(item.get('title'))}"
+          ></span>
+        `).join('')}
+      </div>
+    `;
+  }
 
   function render() {
     const selectedDate = state.get('selectedDate');
     const view = state.get('view');
     const items = state.getIn(['plan', 'items']);
+    const visibleItems = getVisibleItems(items, state.get('activeTagFilter'));
     const selectedEventId = state.get('selectedEventId');
-    const focusPercent = getFocusPercent(selectedDate);
+    const isDirty = !!state.get('isDirty');
+    const handlePercent = sliderDrag ? sliderDrag.handlePercent : 50;
+    const timelineLabels = buildTimelineLabels(selectedDate, view);
 
     root.innerHTML = `
       <div class="timeline-app">
         <header class="topbar">
           <div class="topbar-left">
-            <div class="brand">Timeline Planner</div>
+            <img class="brand" src="assets/goodomens-titlebar.svg" alt="GoodOmens Timeline Planner" />
             <div class="view-toggle">
               <button class="view-button ${view === 'month' ? 'active' : ''}" data-view="month">Month</button>
               <button class="view-button ${view === 'week' ? 'active' : ''}" data-view="week">Week</button>
@@ -128,10 +399,17 @@
                 <option value="sky">Sky Theme</option>
               </select>
             </div>
-            <button class="secondary-btn" id="today-btn">Today</button>
+            <div id="save-status" class="save-status ${isDirty ? 'warn' : ''}">${isDirty ? 'Unsaved changes' : lastStatusText}</div>
+            <button class="save-btn" id="save-plan-btn">Save Local</button>
+            <button class="export-btn" id="export-json-btn">Save JSON</button>
+            <button class="export-btn" id="export-sqlite-btn">Save SQLite</button>
+            <button class="import-btn" id="import-json-btn">Import</button>
+            <input type="file" id="json-import-input" class="hidden" accept=".json,.sqlite,.sqlite3,.db,application/json,application/x-sqlite3" />
             <button class="primary-btn" id="new-item-btn">+ New Event</button>
           </div>
         </header>
+
+        <div class="filter-row">${renderTagFilters(items)}</div>
 
         <div class="planner-shell">
           <div class="timeline-toolbar">
@@ -140,35 +418,37 @@
           </div>
 
           <div class="focus-rail" id="focus-rail">
+            <div class="timeline-labels">${timelineLabels}</div>
             <div class="focus-track"></div>
-            <div class="focus-line" style="left: ${focusPercent}%"></div>
-            <div class="focus-handle" id="focus-handle" style="left: ${focusPercent}%"></div>
+            <div class="focus-line" style="left: ${handlePercent}%"></div>
+            <div class="focus-handle" id="focus-handle" style="left: ${handlePercent}%"></div>
           </div>
 
           <div class="${view === 'day' ? 'day-grid' : (view === 'week' ? 'week-grid' : 'month-grid')}">
-            ${renderCurrentView(view, selectedDate, items, selectedEventId)}
+            ${renderCurrentView(view, selectedDate, visibleItems, selectedEventId)}
           </div>
         </div>
 
         <div class="detail-panel">
           <div class="detail-card">
-            ${renderDetail(selectedDate, items, selectedEventId)}
+            ${renderDetail(selectedDate, items, selectedEventId, isDirty)}
           </div>
         </div>
       </div>
     `;
 
-    applyStoredTheme();
+    applyTheme(loadTheme());
     bindHandlers();
-    saveState(state);
-  }
 
-  function applyStoredTheme() {
-    const theme = loadTheme();
-    document.body.setAttribute('data-theme', theme);
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
-      themeSelect.value = theme;
+      themeSelect.value = loadTheme();
+    }
+
+    const saveStatus = document.getElementById('save-status');
+    if (saveStatus) {
+      saveStatus.textContent = isDirty ? 'Unsaved changes' : lastStatusText;
+      saveStatus.classList.toggle('warn', isDirty);
     }
   }
 
@@ -176,24 +456,16 @@
     document.querySelectorAll('.view-button').forEach((button) => {
       button.addEventListener('click', () => {
         state = state.set('view', button.dataset.view);
+        saveView(button.dataset.view);
+        sliderDrag = null;
         render();
       });
     });
 
-    const todayBtn = document.getElementById('today-btn');
-    if (todayBtn) {
-      todayBtn.addEventListener('click', () => {
-        state = state.set('selectedDate', toISODate(new Date()));
-        render();
-      });
-    }
-
     const themeSelect = document.getElementById('theme-select');
     if (themeSelect) {
       themeSelect.addEventListener('change', (event) => {
-        const selectedTheme = event.target.value;
-        document.body.setAttribute('data-theme', selectedTheme);
-        localStorage.setItem(THEME_KEY, selectedTheme);
+        applyTheme(event.target.value);
       });
     }
 
@@ -204,10 +476,100 @@
       });
     }
 
+    const saveBtn = document.getElementById('save-plan-btn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        const nextState = state.set('isDirty', false);
+        try {
+          saveState(nextState);
+          state = nextState;
+          clearDirty();
+          render();
+        } catch (error) {
+          console.error('Could not save timeline data to localStorage:', error);
+          setStatus('Local save failed', true);
+        }
+      });
+    }
+
+    const exportBtn = document.getElementById('export-json-btn');
+    if (exportBtn) {
+      exportBtn.addEventListener('click', () => {
+        try {
+          downloadFile(JSON.stringify(buildSaveBundle(), null, 2), 'application/json', 'timeline-planner.json');
+          setStatus('Saved JSON file');
+        } catch (error) {
+          console.error('Could not export timeline JSON:', error);
+          setStatus('JSON save failed', true);
+        }
+      });
+    }
+
+    const sqliteExportBtn = document.getElementById('export-sqlite-btn');
+    if (sqliteExportBtn) {
+      sqliteExportBtn.addEventListener('click', async () => {
+        let database;
+        try {
+          const SQL = await initializeSqlJs();
+          database = new SQL.Database();
+          database.run('CREATE TABLE timeline_data (id INTEGER PRIMARY KEY, payload TEXT NOT NULL)');
+          database.run('INSERT INTO timeline_data (id, payload) VALUES (?, ?)', [
+            1,
+            JSON.stringify(buildSaveBundle())
+          ]);
+          downloadFile(database.export(), 'application/x-sqlite3', 'timeline-planner.sqlite');
+          setStatus('Saved SQLite file');
+        } catch (error) {
+          console.error('Could not export timeline SQLite database:', error);
+          setStatus('SQLite save failed', true);
+        } finally {
+          if (database) database.close();
+        }
+      });
+    }
+
+    const importBtn = document.getElementById('import-json-btn');
+    const importInput = document.getElementById('json-import-input');
+    if (importBtn && importInput) {
+      importBtn.addEventListener('click', () => importInput.click());
+      importInput.addEventListener('change', async (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (!file) return;
+
+        importInput.value = '';
+        try {
+          const isSqlite = /\.(sqlite|sqlite3|db)$/i.test(file.name)
+            || file.type === 'application/x-sqlite3';
+          const importedPayload = isSqlite
+            ? await readSqliteBundle(file)
+            : JSON.parse(await file.text());
+          state = fromJS(normalizeState(importedPayload, false));
+          applyTheme(state.get('theme'));
+          saveView(state.get('view'));
+          markDirty();
+          render();
+          setStatus('Imported; save to keep', true);
+        } catch (error) {
+          console.error('Import failed:', error);
+          setStatus('Import failed', true);
+        }
+      });
+    }
+
+    if (handlersBound) return;
+    handlersBound = true;
+
     document.addEventListener('click', (event) => {
       const modalClose = event.target.closest('[data-close="modal"]');
       if (modalClose) {
         closeModal();
+        return;
+      }
+
+      const tagFilterChip = event.target.closest('[data-tag-filter]');
+      if (tagFilterChip) {
+        state = state.set('activeTagFilter', tagFilterChip.dataset.tagFilter || 'all');
+        render();
         return;
       }
 
@@ -239,8 +601,27 @@
     });
 
     document.addEventListener('pointerdown', (event) => {
+      const sliderHandle = event.target.closest('#focus-handle');
+      if (sliderHandle) {
+        const rail = document.getElementById('focus-rail');
+        if (!rail) return;
+
+        const rect = rail.getBoundingClientRect();
+        sliderDrag = {
+          baseDate: state.get('selectedDate'),
+          handlePercent: 50,
+          startX: event.clientX,
+          rectWidth: rect.width,
+          pointerId: event.pointerId
+        };
+        event.preventDefault();
+        return;
+      }
+
       const eventCard = event.target.closest('.event-card');
       if (!eventCard) return;
+
+      event.preventDefault();
 
       const eventId = eventCard.dataset.eventId;
       const item = findEventById(state.getIn(['plan', 'items']), eventId);
@@ -253,10 +634,30 @@
         originalEndDate: item.get('endDate')
       }));
 
+      const activeCard = document.querySelector(`.event-card[data-event-id="${eventId}"]`);
+      if (activeCard) {
+        activeCard.classList.add('dragging');
+      }
+
       eventCard.setPointerCapture && eventCard.setPointerCapture(event.pointerId);
     });
 
     document.addEventListener('pointermove', (event) => {
+      if (sliderDrag) {
+        const rail = document.getElementById('focus-rail');
+        if (!rail) return;
+
+        const rect = rail.getBoundingClientRect();
+        const pos = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
+        const bubbleIndex = getNearestBubbleIndex(pos);
+        const nextDate = offsetDate(sliderDrag.baseDate, bubbleIndex * getSliderStepDays(state.get('view')));
+
+        state = state.set('selectedDate', nextDate);
+        sliderDrag.handlePercent = getTimelineBubblePercent(bubbleIndex);
+        render();
+        return;
+      }
+
       const dragState = state.get('dragState');
       if (!dragState) return;
 
@@ -278,6 +679,10 @@
       const nextStart = offsetDate(dragState.get('originalStartDate'), deltaDays);
       const nextEnd = offsetDate(nextStart, duration - 1);
 
+      const currentStart = item.get('startDate');
+      const currentEnd = item.get('endDate');
+      if (currentStart === nextStart && currentEnd === nextEnd) return;
+
       state = state.updateIn(['plan', 'items'], (items) =>
         items.map((entry) => {
           if (entry.get('id') !== dragState.get('eventId')) return entry;
@@ -286,10 +691,18 @@
       );
 
       state = state.set('selectedDate', nextStart);
+      markDirty();
       render();
     });
 
     document.addEventListener('pointerup', () => {
+      if (sliderDrag) {
+        sliderDrag = null;
+        render();
+        return;
+      }
+
+      document.querySelectorAll('.event-card.dragging').forEach((node) => node.classList.remove('dragging'));
       state = state.set('dragState', null);
     });
 
@@ -304,6 +717,12 @@
         const startDate = form.startDate.value;
         const endDate = form.endDate.value;
         const notes = form.notes.value.trim() || 'No notes.';
+        const tags = (form.tags.value || '')
+          .split(',')
+          .map((tag) => tag.trim())
+          .filter(Boolean);
+        const recurrence = form.recurrence.value || 'none';
+        const status = form.status.value || 'planned';
 
         if (!title) { alert('Please enter an event title.'); return; }
         if (!startDate || !endDate) { alert('Please choose both dates.'); return; }
@@ -318,7 +737,10 @@
                 .set('type', type)
                 .set('startDate', startDate)
                 .set('endDate', endDate)
-                .set('notes', notes);
+                .set('notes', notes)
+                .set('tags', fromJS(tags))
+                .set('recurrence', recurrence)
+                .set('status', status);
             })
           );
         } else {
@@ -329,7 +751,9 @@
             startDate,
             endDate,
             notes,
-            status: 'planned'
+            tags,
+            recurrence,
+            status
           });
 
           state = state.updateIn(['plan', 'items'], (items) => items.push(newEvent));
@@ -337,6 +761,7 @@
 
         state = state.set('selectedEventId', id);
         state = state.set('selectedDate', startDate);
+        markDirty();
         closeModal();
         render();
       });
@@ -353,6 +778,7 @@
         );
 
         state = state.set('selectedEventId', null);
+        markDirty();
         closeModal();
         render();
       });
@@ -363,13 +789,17 @@
     const modal = document.getElementById('event-modal');
     const form = document.getElementById('event-form');
     const titleInput = document.getElementById('event-title');
+    const typeInput = document.getElementById('event-type');
     const startInput = document.getElementById('event-start');
     const endInput = document.getElementById('event-end');
     const notesInput = document.getElementById('event-notes');
+    const tagsInput = document.getElementById('event-tags');
+    const recurrenceInput = document.getElementById('event-recurring');
+    const statusInput = document.getElementById('event-status');
     const dateId = document.getElementById('event-id');
     const deleteBtn = document.getElementById('delete-event-btn');
 
-    if (!modal || !form || !titleInput || !startInput || !endInput || !notesInput || !dateId) return;
+    if (!modal || !form || !titleInput || !typeInput || !startInput || !endInput || !notesInput || !tagsInput || !recurrenceInput || !statusInput || !dateId) return;
 
     form.dataset.mode = mode;
 
@@ -380,15 +810,21 @@
       document.getElementById('event-modal-title').textContent = 'Edit Event';
       dateId.value = item.get('id');
       titleInput.value = item.get('title');
-      form.type.value = item.get('type');
+      typeInput.value = item.get('type') || 'work';
       startInput.value = item.get('startDate');
       endInput.value = item.get('endDate');
       notesInput.value = item.get('notes');
+      tagsInput.value = (getEventTags(item)).join(', ');
+      recurrenceInput.value = item.get('recurrence') || 'none';
+      statusInput.value = item.get('status') || 'planned';
       deleteBtn.classList.remove('hidden');
     } else {
       document.getElementById('event-modal-title').textContent = 'Create Event';
       form.reset();
       dateId.value = '';
+      typeInput.value = 'work';
+      recurrenceInput.value = 'none';
+      statusInput.value = 'planned';
       startInput.value = selectedDate || state.get('selectedDate');
       endInput.value = selectedDate || state.get('selectedDate');
       deleteBtn.classList.add('hidden');
@@ -414,6 +850,20 @@
     if (deleteBtn) deleteBtn.classList.add('hidden');
   }
 
+  function renderEventBadges(item) {
+    const badges = [];
+    const tags = getEventTags(item);
+    const recurrence = item.get('recurrence');
+
+    if (tags.length > 0) {
+      badges.push(`<span class="meta-badge tag">${escapeHtml(tags[0])}</span>`);
+    }
+    if (recurrence && recurrence !== 'none') {
+      badges.push(`<span class="meta-badge recurrence">${escapeHtml(getRecurrenceLabel(recurrence))}</span>`);
+    }
+    return badges.join('');
+  }
+
   function renderCurrentView(view, selectedDate, items, selectedEventId) {
     if (view === 'week') return renderWeekView(selectedDate, items, selectedEventId);
     if (view === 'day') return renderDayView(selectedDate, items, selectedEventId);
@@ -432,7 +882,7 @@
       const inMonth = cellDate.getMonth() === d.getMonth();
       const isSelected = iso === selectedDate;
       const isToday = iso === toISODate(new Date());
-
+      const dateMarkers = renderDateMarkers(items, iso);
       const dateEvents = items.filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'));
 
       const cards = dateEvents
@@ -442,6 +892,7 @@
           return `
             <div class="event-card ${type} ${isSelectedEvent ? 'selected' : ''}" data-event-id="${item.get('id')}">
               <span class="event-label">${escapeHtml(item.get('title'))}</span>
+              <div class="event-badges">${renderEventBadges(item)}</div>
               <span class="event-dot">•</span>
             </div>
           `;
@@ -453,6 +904,7 @@
           <div class="day-header">${getShortWeekday(cellDate)}</div>
           <div class="day-body">
             <span class="day-number ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${!inMonth ? 'outside-month' : ''}">${cellDate.getDate()}</span>
+            ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
             ${cards}
           </div>
         </div>
@@ -474,11 +926,13 @@
       current.setDate(start.getDate() + i);
       const iso = toISODate(current);
       const isSelected = iso === selectedDate;
+      const dateMarkers = renderDateMarkers(items, iso);
 
       const cards = items.filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'))
         .map((item) => `
           <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
             <span class="event-label">${escapeHtml(item.get('title'))}</span>
+            <div class="event-badges">${renderEventBadges(item)}</div>
             <span class="event-dot">•</span>
           </div>
         `)
@@ -489,6 +943,7 @@
           <div class="day-header">${getShortWeekday(current)}</div>
           <div class="day-body">
             <span class="day-number ${isSelected ? 'selected' : ''}">${current.getDate()}</span>
+            ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
             ${cards}
           </div>
         </div>
@@ -500,10 +955,12 @@
 
   function renderDayView(selectedDate, items, selectedEventId) {
     const current = parseISO(selectedDate);
+    const dateMarkers = renderDateMarkers(items, selectedDate);
     const cards = items.filter((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'))
       .map((item) => `
         <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
           <span class="event-label">${escapeHtml(item.get('title'))}</span>
+          <div class="event-badges">${renderEventBadges(item)}</div>
           <span class="event-dot">•</span>
         </div>
       `)
@@ -514,13 +971,14 @@
         <div class="day-header">${getLongDayName(current)}</div>
         <div class="day-body">
           <span class="day-number selected">${current.getDate()}</span>
+          ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
           ${cards || '<div class="empty-state">No events for this day.</div>'}
         </div>
       </div>
     `;
   }
 
-  function renderDetail(selectedDate, items, selectedEventId) {
+  function renderDetail(selectedDate, items, selectedEventId, isDirty) {
     const match = findEventById(items, selectedEventId)
       || items.find((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'));
 
@@ -528,12 +986,24 @@
       return '<div class="empty-state">No event selected.</div>';
     }
 
+    const eventTitle = `${escapeHtml(match.get('title'))}${isDirty ? ' *' : ''}`;
+
     return `
-      <div class="detail-title">${escapeHtml(match.get('title'))}</div>
+      <div class="detail-title">${eventTitle}</div>
 
       <div class="detail-field">
         <span class="detail-label">Type</span>
         <div class="type-pill ${match.get('type')}">${match.get('type')}</div>
+      </div>
+
+      <div class="detail-field">
+        <span class="detail-label">Tags</span>
+        <div class="detail-value">${escapeHtml((getEventTags(match).join(', ') || 'No tags'))}</div>
+      </div>
+
+      <div class="detail-field">
+        <span class="detail-label">Recurrence</span>
+        <div class="detail-value">${escapeHtml(getRecurrenceLabel(match.get('recurrence')) || 'Does not repeat')}</div>
       </div>
 
       <div class="detail-field">
@@ -550,18 +1020,6 @@
         <button class="secondary-btn" data-edit-event="${match.get('id')}">Edit Event</button>
       </div>
     `;
-  }
-
-  function getFocusPercent(dateString) {
-    const d = parseISO(dateString);
-    const monthLength = getMonthLength(d);
-    const day = d.getDate();
-    const ratio = (day - 1) / Math.max(monthLength - 1, 1);
-    return Math.max(0, Math.min(100, ratio * 100));
-  }
-
-  function getMonthLength(date) {
-    return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
   }
 
   function parseISO(value) {
@@ -617,6 +1075,10 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
   }
 
   render();

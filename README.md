@@ -1,15 +1,26 @@
-# Timeline Planner
+# GoodOmens
 
-Plan your future agenda with a streamlined timeline.
+A timeline planner for organizing future commitments, milestones, and agenda items with minimal friction.
 
 ## Overview
-Timeline Planner is a lightweight planning tool for organizing future commitments, milestones, and agenda items with minimal friction. The project is currently in its foundation and planning phase, with a focus on creating a reliable, intuitive scheduling experience.
+GoodOmens is a lightweight planning tool for organizing future commitments, milestones, and agenda items with minimal friction. The project is currently in its foundation and planning phase.
 
 ## Documentation
 - [Roadmap](docs/ROADMAP.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Changelog](docs/CHANGELOG.md)
 - [Decision Log](docs/DECISIONS.md)
+
+## Run offline
+The planner's Immutable.js and SQL.js runtimes, including the SQLite WebAssembly binary, are stored in `assets/vendor/`. After cloning or downloading the repository, no CDN or internet connection is needed to run the app.
+
+From the repository folder, start a local server with:
+
+```powershell
+python -m http.server 8000
+```
+
+Then open `http://localhost:8000/TimelinePlanner.html`. The local server is needed so browsers can load the SQLite WebAssembly file; it does not require an internet connection.
 
 ## Product Vision
 Create a simple, reliable timeline planning experience that helps users organize future commitments, milestones, and agenda items without friction.
