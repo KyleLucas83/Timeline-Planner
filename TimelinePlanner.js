@@ -315,14 +315,22 @@
     }
   }
 
+  function getTimelineBubblePercent(index) {
+    return ((index + 6) / 12) * 100;
+  }
+
+  function getNearestBubbleIndex(percent) {
+    const normalized = (percent / 100) * 12 - 6;
+    return clamp(Math.round(normalized), -6, 6);
+  }
+
   function buildTimelineLabels(selectedDate, view) {
     const step = getSliderStepDays(view);
-    const centerOffset = getSliderRangeDays(view) / 2;
     const labels = [];
 
     for (let index = -6; index <= 6; index += 1) {
       const labelDate = offsetDate(selectedDate, index * step);
-      const leftPercent = ((index + 6) / 12) * 100;
+      const leftPercent = getTimelineBubblePercent(index);
       const bubbleClass = index === 0 ? 'center' : (index % 2 === 0 ? 'below' : 'above');
       labels.push(`
         <div class="timeline-bubble ${bubbleClass}" style="left: ${leftPercent}%">
@@ -624,12 +632,11 @@
 
         const rect = rail.getBoundingClientRect();
         const pos = clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100);
-        const rangeDays = getSliderRangeDays(state.get('view'));
-        const deltaDays = ((pos - 50) / 50) * rangeDays;
-        const nextDate = offsetDate(sliderDrag.baseDate, Math.round(deltaDays));
+        const bubbleIndex = getNearestBubbleIndex(pos);
+        const nextDate = offsetDate(sliderDrag.baseDate, bubbleIndex * getSliderStepDays(state.get('view')));
 
         state = state.set('selectedDate', nextDate);
-        sliderDrag.handlePercent = pos;
+        sliderDrag.handlePercent = getTimelineBubblePercent(bubbleIndex);
         render();
         return;
       }
