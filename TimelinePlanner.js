@@ -350,6 +350,23 @@
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   }
 
+  function renderDateMarkers(items, dateString) {
+    const starts = items.filter((item) => item.get('startDate') === dateString);
+    if (!starts.length) return '';
+
+    return `
+      <div class="date-markers" aria-label="${starts.length} event${starts.length > 1 ? 's' : ''} on this date">
+        ${starts.map((item) => `
+          <span
+            class="timeline-marker ${item.get('type')}"
+            title="${escapeHtml(item.get('title'))}"
+            aria-label="${escapeHtml(item.get('title'))}"
+          ></span>
+        `).join('')}
+      </div>
+    `;
+  }
+
   function render() {
     const selectedDate = state.get('selectedDate');
     const view = state.get('view');
@@ -865,7 +882,7 @@
       const inMonth = cellDate.getMonth() === d.getMonth();
       const isSelected = iso === selectedDate;
       const isToday = iso === toISODate(new Date());
-
+      const dateMarkers = renderDateMarkers(items, iso);
       const dateEvents = items.filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'));
 
       const cards = dateEvents
@@ -887,6 +904,7 @@
           <div class="day-header">${getShortWeekday(cellDate)}</div>
           <div class="day-body">
             <span class="day-number ${isToday ? 'today' : ''} ${isSelected ? 'selected' : ''} ${!inMonth ? 'outside-month' : ''}">${cellDate.getDate()}</span>
+            ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
             ${cards}
           </div>
         </div>
@@ -908,6 +926,7 @@
       current.setDate(start.getDate() + i);
       const iso = toISODate(current);
       const isSelected = iso === selectedDate;
+      const dateMarkers = renderDateMarkers(items, iso);
 
       const cards = items.filter((item) => iso >= item.get('startDate') && iso <= item.get('endDate'))
         .map((item) => `
@@ -924,6 +943,7 @@
           <div class="day-header">${getShortWeekday(current)}</div>
           <div class="day-body">
             <span class="day-number ${isSelected ? 'selected' : ''}">${current.getDate()}</span>
+            ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
             ${cards}
           </div>
         </div>
@@ -935,6 +955,7 @@
 
   function renderDayView(selectedDate, items, selectedEventId) {
     const current = parseISO(selectedDate);
+    const dateMarkers = renderDateMarkers(items, selectedDate);
     const cards = items.filter((item) => selectedDate >= item.get('startDate') && selectedDate <= item.get('endDate'))
       .map((item) => `
         <div class="event-card ${item.get('type')} ${item.get('id') === selectedEventId ? 'selected' : ''}" data-event-id="${item.get('id')}">
@@ -950,6 +971,7 @@
         <div class="day-header">${getLongDayName(current)}</div>
         <div class="day-body">
           <span class="day-number selected">${current.getDate()}</span>
+          ${dateMarkers || '<div class="date-markers empty-marker"></div>'}
           ${cards || '<div class="empty-state">No events for this day.</div>'}
         </div>
       </div>
