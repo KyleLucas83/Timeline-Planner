@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="application-name" content="GoodOmens" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>GoodOmens</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/goodomens-sample.svg" />
+    <link rel="apple-touch-icon" href="/assets/goodomens-sample.svg" />
+    <link rel="stylesheet" href="/TimelinePlanner.css" />
+    <script src="/assets/vendor/immutable.min.js"></script>
+    <script src="/assets/vendor/sql-wasm.js"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="event-modal" class="event-modal hidden" aria-hidden="true">
+      <div class="event-modal-backdrop" data-close="modal"></div>
+      <div class="event-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="event-modal-title">
+        <div class="event-modal-header">
+          <h3 id="event-modal-title">Create Event</h3>
+          <button type="button" class="close-btn" data-close="modal" aria-label="Close">×</button>
+        </div>
+
+        <form id="event-form">
+          <input type="hidden" name="eventId" id="event-id" />
+
+          <div class="form-row">
+            <label for="event-title">Title</label>
+            <input id="event-title" name="title" type="text" required />
+          </div>
+
+          <div class="form-row">
+            <label for="event-type">Type</label>
+            <select id="event-type" name="type">
+              <option value="work">Work</option>
+              <option value="personal">Personal</option>
+              <option value="health">Health</option>
+              <option value="travel">Travel</option>
+              <option value="deadline">Deadline</option>
+            </select>
+          </div>
+
+          <div class="form-row">
+            <label for="event-tags">Tags</label>
+            <input id="event-tags" name="tags" type="text" placeholder="planning, health, travel" />
+          </div>
+
+          <div class="form-row two-col">
+            <div>
+              <label for="event-recurring">Recurring</label>
+              <select id="event-recurring" name="recurrence">
+                <option value="none">Does not repeat</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+                <option value="yearly">Yearly</option>
+              </select>
+            </div>
+            <div>
+              <label for="event-status">Status</label>
+              <select id="event-status" name="status">
+                <option value="planned">Planned</option>
+                <option value="active">Active</option>
+                <option value="urgent">Urgent</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row two-col">
+            <div>
+              <label for="event-start">Start date</label>
+              <input id="event-start" name="startDate" type="date" required />
+            </div>
+            <div>
+              <label for="event-end">End date</label>
+              <input id="event-end" name="endDate" type="date" required />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <label for="event-notes">Notes</label>
+            <textarea id="event-notes" name="notes" rows="4"></textarea>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" class="danger-btn hidden" id="delete-event-btn">Delete</button>
+            <div class="action-spacer"></div>
+            <button type="button" class="secondary-btn" data-close="modal">Cancel</button>
+            <button type="submit" class="primary-btn">Save Event</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/TimelinePlanner.js"></script>
+  </body>
+</html>
